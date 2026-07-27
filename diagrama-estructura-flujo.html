@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bitácor.ai — Estructura y flujo de datos</title>
+  <style>
+    :root {
+      --ink: #1a1030;
+      --muted: #5c5470;
+      --line: #c9bfd8;
+      --bg: #f6f3fb;
+      --panel: #ffffff;
+      --accent: #240046;
+      --pink: #ed93af;
+      --teal: #0f766e;
+      --amber: #b45309;
+      --blue: #1d4ed8;
+      --card-border: #e4dcf0;
+      --shadow: 0 10px 30px rgba(36, 0, 70, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 400px at 10% -10%, #efe6ff 0%, transparent 55%),
+        radial-gradient(700px 320px at 100% 0%, #fde8f0 0%, transparent 50%),
+        var(--bg);
+      line-height: 1.45;
+    }
+
+    header {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 36px 24px 8px;
+    }
+
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 1.75rem;
+      letter-spacing: -0.03em;
+      color: var(--accent);
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 62ch;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      margin-top: 18px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      border: 1px solid rgba(0,0,0,0.08);
+    }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 16px 24px 48px;
+      display: grid;
+      gap: 22px;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+
+    section h2 {
+      margin: 0 0 4px;
+      font-size: 1.15rem;
+      color: var(--accent);
+    }
+
+    section .sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    /* ---- Tree structure ---- */
+    .tree {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.86rem;
+      background: #faf8fd;
+      border: 1px dashed #d8cee8;
+      border-radius: 12px;
+      padding: 16px 18px;
+      overflow-x: auto;
+      white-space: pre;
+      color: #3b3154;
+    }
+
+    .tree .dir { color: var(--accent); font-weight: 700; }
+    .tree .file { color: #334155; }
+    .tree .note { color: var(--teal); }
+
+    /* ---- Flow diagram ---- */
+    .flow {
+      display: grid;
+      gap: 14px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    @media (max-width: 820px) {
+      .row {
+        grid-template-columns: 1fr;
+      }
+      .arrow {
+        transform: rotate(90deg);
+        justify-self: center;
+        margin: 2px 0;
+      }
+    }
+
+    .node {
+      border-radius: 14px;
+      border: 1.5px solid var(--card-border);
+      padding: 12px 14px;
+      background: #fff;
+      min-height: 88px;
+    }
+
+    .node h3 {
+      margin: 0 0 6px;
+      font-size: 0.95rem;
+    }
+
+    .node p {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .node ul {
+      margin: 6px 0 0;
+      padding-left: 16px;
+      font-size: 0.78rem;
+      color: #475569;
+    }
+
+    .node.app { border-color: #c4b5fd; background: #f5f3ff; }
+    .node.wizard { border-color: #99f6e4; background: #f0fdfa; }
+    .node.result { border-color: #fbcfe8; background: #fdf2f8; }
+    .node.trip { border-color: #fde68a; background: #fffbeb; }
+    .node.data { border-color: #bfdbfe; background: #eff6ff; }
+    .node.storage { border-color: #e2e8f0; background: #f8fafc; }
+
+    .arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      min-width: 72px;
+      text-align: center;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .arrow .glyph {
+      font-size: 1.35rem;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    .modes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 820px) {
+      .modes { grid-template-columns: 1fr; }
+    }
+
+    .mode-card {
+      border-radius: 14px;
+      border: 1.5px solid var(--card-border);
+      padding: 14px;
+    }
+
+    .mode-card h3 {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+    }
+
+    .mode-card ol {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 0.82rem;
+      color: #475569;
+    }
+
+    .mode-card li { margin: 4px 0; }
+
+    .chip {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 3px 8px;
+      border-radius: 999px;
+      margin-bottom: 8px;
+    }
+
+    .chip.a { background: #ede9fe; color: #5b21b6; }
+    .chip.b { background: #ccfbf1; color: #115e59; }
+    .chip.c { background: #fce7f3; color: #9d174d; }
+    .chip.d { background: #fef3c7; color: #92400e; }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 820px) {
+      .steps { grid-template-columns: 1fr 1fr; }
+    }
+
+    .step {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 0.78rem;
+      text-align: center;
+    }
+
+    .step strong {
+      display: block;
+      color: var(--accent);
+      margin-bottom: 4px;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    footer {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 40px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    svg.mini-flow {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #faf8fd;
+      border-radius: 12px;
+      border: 1px dashed #d8cee8;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bitácor.ai — Estructura y flujo</h1>
+    <p>
+      Diagrama de referencia (archivo aparte). Muestra la estructura del proyecto
+      y cómo fluyen los datos de ejemplo entre pantallas/componentes.
+      Abrir este HTML en el navegador; no modifica el código de la app.
+    </p>
+    <div class="legend">
+      <span><i class="swatch" style="background:#f5f3ff"></i> App / estado</span>
+      <span><i class="swatch" style="background:#f0fdfa"></i> Wizard</span>
+      <span><i class="swatch" style="background:#fdf2f8"></i> Resultados</span>
+      <span><i class="swatch" style="background:#fffbeb"></i> En el viaje</span>
+      <span><i class="swatch" style="background:#eff6ff"></i> Datos mock</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- ESTRUCTURA -->
+    <section>
+      <h2>1. Estructura del proyecto</h2>
+      <p class="sub">Archivos clave (sin node_modules / dist).</p>
+      <div class="tree"><span class="dir">bitácor.ai/</span>
+├── <span class="file">index.html</span>                 <span class="note"># entry HTML Vite</span>
+├── <span class="file">package.json</span>
+├── <span class="file">vite.config.ts</span>
+├── <span class="file">server.ts</span>                  <span class="note"># Express + endpoint Gemini (/api/generate-itinerary)</span>
+├── <span class="file">design.md</span> / <span class="file">README.md</span> / <span class="file">metadata.json</span>
+├── <span class="dir">assets/</span>
+└── <span class="dir">src/</span>
+    ├── <span class="file">main.tsx</span>               <span class="note"># monta React</span>
+    ├── <span class="file">App.tsx</span>                <span class="note"># estado global + enrutado por modo</span>
+    ├── <span class="file">types.ts</span>               <span class="note"># TravelConfig, GeneratedItinerary…</span>
+    ├── <span class="file">data.ts</span>                <span class="note"># SUGGESTIONS + generateMockProposals()</span>
+    └── <span class="dir">components/</span>
+        ├── <span class="file">Header.tsx</span>
+        ├── <span class="file">BackgroundMesh.tsx</span>
+        ├── <span class="file">WizardView.tsx</span>       <span class="note"># 5 pasos del planificador</span>
+        ├── <span class="file">ResultView.tsx</span>       <span class="note"># 3 propuestas + detalle</span>
+        ├── <span class="file">TripView.tsx</span>         <span class="note"># modo “En el Viaje”</span>
+        ├── <span class="file">CustomDatePicker.tsx</span>
+        └── <span class="file">CustomTimePicker.tsx</span></div>
+    </section>
+
+    <!-- PANTALLAS -->
+    <section>
+      <h2>2. Pantallas / modos</h2>
+      <p class="sub">
+        <code>App.tsx</code> elige la vista según <code>appMode</code> y si ya hay <code>proposals</code>.
+      </p>
+      <div class="modes">
+        <div class="mode-card" style="border-color:#99f6e4;background:#f0fdfa">
+          <span class="chip b">Planificador</span>
+          <h3>WizardView (5 pasos)</h3>
+          <ol>
+            <li>Destino (sugerencias o custom)</li>
+            <li>Fechas / días + horas</li>
+            <li>Presupuesto</li>
+            <li>Intereses (según destino)</li>
+            <li>Ritmo → Generar</li>
+          </ol>
+        </div>
+        <div class="mode-card" style="border-color:#fbcfe8;background:#fdf2f8">
+          <span class="chip c">Resultados</span>
+          <h3>ResultView</h3>
+          <ol>
+            <li>3 tarjetas de propuestas</li>
+            <li>Detalle: itinerario / spots / tips</li>
+            <li>Guardar → localStorage</li>
+          </ol>
+        </div>
+        <div class="mode-card" style="border-color:#fde68a;background:#fffbeb">
+          <span class="chip d">En el Viaje</span>
+          <h3>TripView</h3>
+          <ol>
+            <li>Usa itinerarios guardados</li>
+            <li>Fotos mock + mapa vectorial</li>
+            <li>Seguimiento / resumen del día</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="steps">
+        <div class="step"><strong>Paso 1</strong>Destino<br/>SUGGESTIONS</div>
+        <div class="step"><strong>Paso 2</strong>Fechas / días<br/>Date &amp; Time pickers</div>
+        <div class="step"><strong>Paso 3</strong>Presupuesto<br/>BUDGET_OPTIONS</div>
+        <div class="step"><strong>Paso 4</strong>Intereses<br/>getCategoriesForDestination</div>
+        <div class="step"><strong>Paso 5</strong>Ritmo<br/>PACE_OPTIONS → generate</div>
+      </div>
+    </section>
+
+    <!-- FLUJO DE DATOS -->
+    <section>
+      <h2>3. Flujo de datos (ejemplo / mock)</h2>
+      <p class="sub">
+        En el cliente actual, la generación usa <code>generateMockProposals(config)</code> en
+        <code>data.ts</code> (no llama al endpoint Gemini de <code>server.ts</code>).
+      </p>
+
+      <div class="flow">
+        <div class="row">
+          <div class="node data">
+            <h3>src/data.ts</h3>
+            <p>Catálogos estáticos + generador mock</p>
+            <ul>
+              <li>SUGGESTIONS (Medellín, Kioto…)</li>
+              <li>BUDGET / PACE / categorías</li>
+              <li>generateMockProposals()</li>
+            </ul>
+          </div>
+          <div class="arrow">
+            <span class="glyph">→</span>
+            lee opciones
+          </div>
+          <div class="node wizard">
+            <h3>WizardView</h3>
+            <p>Escribe en <code>TravelConfig</code></p>
+            <ul>
+              <li>destination, days, budget</li>
+              <li>interests[], pace</li>
+              <li>fechas/horas opcionales</li>
+            </ul>
+          </div>
+          <div class="arrow">
+            <span class="glyph">→</span>
+            setConfig
+          </div>
+          <div class="node app">
+            <h3>App.tsx (estado)</h3>
+            <p>Fuente de verdad en memoria</p>
+            <ul>
+              <li>config, currentStep</li>
+              <li>proposals[]</li>
+              <li>savedItinerariesList</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="node app">
+            <h3>generateItinerary()</h3>
+            <p>Simula ~3.5s de “IA” y llama al mock</p>
+            <ul>
+              <li>input: config</li>
+              <li>output: 3 GeneratedItinerary</li>
+            </ul>
+          </div>
+          <div class="arrow">
+            <span class="glyph">→</span>
+            setProposals
+          </div>
+          <div class="node result">
+            <h3>ResultView</h3>
+            <p>Muestra A / B / C y detalle</p>
+            <ul>
+              <li>itinerary por días</li>
+              <li>cafés &amp; coworks</li>
+              <li>practicalTips</li>
+            </ul>
+          </div>
+          <div class="arrow">
+            <span class="glyph">→</span>
+            onSave
+          </div>
+          <div class="node storage">
+            <h3>localStorage</h3>
+            <p>Clave <code>bitacor_saved_itineraries</code></p>
+            <ul>
+              <li>persiste propuestas</li>
+              <li>también theme dark/light</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="node storage">
+            <h3>savedItinerariesList</h3>
+            <p>Lista hidratada al iniciar App</p>
+          </div>
+          <div class="arrow">
+            <span class="glyph">→</span>
+            props
+          </div>
+          <div class="node trip">
+            <h3>TripView</h3>
+            <p>Modo “En el Viaje 📸”</p>
+            <ul>
+              <li>elige itinerario guardado</li>
+              <li>MOCK_PHOTOS_DATABASE</li>
+              <li>fotos / mapa / resumen</li>
+            </ul>
+          </div>
+          <div class="arrow">
+            <span class="glyph">⇄</span>
+            switcher
+          </div>
+          <div class="node app">
+            <h3>appMode</h3>
+            <p><code>"planner"</code> ↔ <code>"trip"</code></p>
+            <ul>
+              <li>Header: Nuevo → resetAll</li>
+              <li>BackgroundMesh / tema</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SVG overview -->
+    <section>
+      <h2>4. Vista rápida del recorrido</h2>
+      <p class="sub">Usuario → wizard → mock → resultados → guardado → viaje.</p>
+      <svg class="mini-flow" viewBox="0 0 1000 220" role="img" aria-label="Flujo de pantallas">
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#240046" />
+          </marker>
+        </defs>
+
+        <!-- boxes -->
+        <rect x="20" y="70" width="150" height="70" rx="14" fill="#f0fdfa" stroke="#0f766e" stroke-width="2"/>
+        <text x="95" y="100" text-anchor="middle" font-size="14" font-family="Segoe UI, Arial" fill="#115e59" font-weight="700">WizardView</text>
+        <text x="95" y="120" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">TravelConfig</text>
+
+        <rect x="220" y="70" width="150" height="70" rx="14" fill="#f5f3ff" stroke="#5b21b6" stroke-width="2"/>
+        <text x="295" y="100" text-anchor="middle" font-size="14" font-family="Segoe UI, Arial" fill="#5b21b6" font-weight="700">App.tsx</text>
+        <text x="295" y="120" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">generateItinerary</text>
+
+        <rect x="420" y="70" width="150" height="70" rx="14" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2"/>
+        <text x="495" y="100" text-anchor="middle" font-size="14" font-family="Segoe UI, Arial" fill="#1d4ed8" font-weight="700">data.ts</text>
+        <text x="495" y="120" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">3 propuestas mock</text>
+
+        <rect x="620" y="70" width="150" height="70" rx="14" fill="#fdf2f8" stroke="#9d174d" stroke-width="2"/>
+        <text x="695" y="100" text-anchor="middle" font-size="14" font-family="Segoe UI, Arial" fill="#9d174d" font-weight="700">ResultView</text>
+        <text x="695" y="120" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">A / B / C + detalle</text>
+
+        <rect x="820" y="70" width="160" height="70" rx="14" fill="#fffbeb" stroke="#92400e" stroke-width="2"/>
+        <text x="900" y="100" text-anchor="middle" font-size="14" font-family="Segoe UI, Arial" fill="#92400e" font-weight="700">TripView</text>
+        <text x="900" y="120" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">itinerarios guardados</text>
+
+        <!-- arrows top -->
+        <line x1="170" y1="105" x2="215" y2="105" stroke="#240046" stroke-width="2" marker-end="url(#arrowhead)"/>
+        <line x1="370" y1="105" x2="415" y2="105" stroke="#240046" stroke-width="2" marker-end="url(#arrowhead)"/>
+        <line x1="570" y1="105" x2="615" y2="105" stroke="#240046" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+        <!-- save path under -->
+        <path d="M695 140 C695 175, 695 175, 900 175" fill="none" stroke="#240046" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrowhead)"/>
+        <text x="790" y="195" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">vía localStorage (guardados)</text>
+
+        <!-- labels on top arrows -->
+        <text x="192" y="60" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">config</text>
+        <text x="392" y="60" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">mock</text>
+        <text x="592" y="60" text-anchor="middle" font-size="11" font-family="Segoe UI, Arial" fill="#5c5470">proposals</text>
+      </svg>
+    </section>
+
+    <section>
+      <h2>5. Nota sobre Gemini</h2>
+      <p class="sub" style="margin-bottom:0">
+        <code>server.ts</code> expone <code>POST /api/generate-itinerary</code> con Gemini, pero
+        <code>App.tsx</code> hoy genera con el mock local. El flujo visual de la UI se alimenta
+        de <code>data.ts</code> + estado en <code>App</code> + <code>localStorage</code>.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    Archivo generado solo para revisión visual · no forma parte del runtime de la app.
+  </footer>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "Bitácor.ai",
+  "description": "Bitácor.ai — Planificador de viajes con IA para nómadas digitales, con diseño glassmorphic etéreo y sofisticado.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
