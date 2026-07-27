@@ -29,7 +29,7 @@
 - [ ] Google Photos sync (explorado; no implementado — OAuth/API compleja)
 - [ ] Persistencia server-side (hoy solo cliente)
 - [ ] Amigos reales: auth + follows + sync de viajes (hoy mock)
-- [ ] README desactualizado (aún menciona Gemini / `.env.local`)
+- [x] README actualizado (Cursor SDK, `.env`, stack y scripts reales)
 - [ ] Tests automatizados (no hay suite)
 
 ## Blockers
