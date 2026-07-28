@@ -18,6 +18,7 @@ import {
   getCatalogCategories,
   hasDestination,
 } from "../data";
+import { apiUrl } from "../lib/apiBase";
 import type { DestinationCategory } from "../data";
 import type { TravelConfig, StepId } from "../types";
 import EnergyPalettePicker from "./EnergyPalettePicker";
@@ -111,7 +112,7 @@ export default function WizardView({
 
     (async () => {
       try {
-        const res = await fetch("/api/destination-categories", {
+        const res = await fetch(apiUrl("/api/destination-categories"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ destination: dest.trim() }),

@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
 import { normalizeActivityCategory } from "./server/activityCategories";
 import { cacheKey, categoryCacheKey, getCachedCategories, getCachedProposals, setCachedCategories, setCachedProposals } from "./server/cache";
 import { generateCategoriesWithCursor, generateProposalsWithCursor } from "./server/cursorAgent";
@@ -18,9 +17,14 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Production is served behind a reverse proxy at manuelatorres.com/bitacor-ai
+// (Cloudflare Worker → this Vercel deployment), which forwards the full path.
+// Dev keeps everything at root since it's accessed directly on localhost.
+const API_PREFIX = process.env.NODE_ENV === "production" ? "/bitacor-ai" : "";
+
 app.use(express.json({ limit: "256kb" }));
 
-app.get("/api/places/autocomplete", async (req, res) => {
+app.get(`${API_PREFIX}/api/places/autocomplete`, async (req, res) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q : "";
     const result = await autocompleteCities(q);
@@ -31,7 +35,7 @@ app.get("/api/places/autocomplete", async (req, res) => {
   }
 });
 
-app.post("/api/destination-categories", async (req, res) => {
+app.post(`${API_PREFIX}/api/destination-categories`, async (req, res) => {
   const started = Date.now();
   try {
     const ip = clientIp(req);
@@ -103,7 +107,7 @@ function clientIp(req: express.Request): string {
  * Unified generation: Places + Weather (soft) → Cursor SDK → 2 proposals.
  * Partial failures in enrichment do not abort generation.
  */
-app.post("/api/generate-proposals", async (req, res) => {
+app.post(`${API_PREFIX}/api/generate-proposals`, async (req, res) => {
   const started = Date.now();
   const timings: Record<string, number> = {};
 
@@ -285,19 +289,30 @@ app.post("/api/generate-proposals", async (req, res) => {
   }
 });
 
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[server]", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+function setupProductionStatic() {
+  const distPath = path.join(process.cwd(), "dist");
+  app.get("/", (_req, res) => res.redirect(`${API_PREFIX}/`));
+  app.use(API_PREFIX, express.static(distPath));
+  app.get(`${API_PREFIX}/*`, (_req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    setupProductionStatic();
   }
 
   app.listen(PORT, "0.0.0.0", () => {
@@ -305,4 +320,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
