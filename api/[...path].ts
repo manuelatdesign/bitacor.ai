@@ -1,18 +1,8 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import type { Express } from "express";
+/**
+ * Vercel serverless entry: hand the request to the Express app.
+ * Export the app directly — wrapping it in a Promise that waits for `next`
+ * hangs forever after a matched route sends a response (FUNCTION_INVOCATION_FAILED).
+ */
+import app from "../server";
 
-let app: Express | undefined;
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!app) {
-    const mod = await import("../server.js");
-    app = mod.default;
-  }
-
-  return new Promise<void>((resolve, reject) => {
-    app!(req, res, (err: unknown) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-}
+export default app;

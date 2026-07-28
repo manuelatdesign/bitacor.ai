@@ -3,7 +3,6 @@ import path from "path";
 import dotenv from "dotenv";
 import { normalizeActivityCategory } from "./server/activityCategories";
 import { cacheKey, categoryCacheKey, getCachedCategories, getCachedProposals, setCachedCategories, setCachedProposals } from "./server/cache";
-import { generateCategoriesWithCursor, generateProposalsWithCursor } from "./server/cursorAgent";
 import { autocompleteCities, enrichPlaces } from "./server/places";
 import { checkRateLimit } from "./server/rateLimit";
 import { getTokenBudgetStatus, isTokenBudgetError } from "./server/tokenBudget";
@@ -17,84 +16,27 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Dev/local node: routes at /api/*. Local prod + Cloudflare proxy: /bitacor-ai/api/*.
-// Vercel serverless (api/[...path].ts): rewrite strips prefix, routes stay at /api/*.
-const API_PREFIX =
-  process.env.VERCEL ? "" : process.env.NODE_ENV === "production" ? "/bitacor-ai" : "";
+/**
+ * Path prefixes where /api/* is mounted.
+ * - Local dev: "" → /api/...
+ * - Local prod / Cloudflare without rewrite strip: "/bitacor-ai"
+ * - Vercel: both (rewrite may strip prefix, or CF may forward full path)
+ */
+function apiPrefixes(): string[] {
+  if (process.env.VERCEL) return ["", "/bitacor-ai"];
+  if (process.env.NODE_ENV === "production") return ["/bitacor-ai"];
+  return [""];
+}
 
-app.use(express.json({ limit: "256kb" }));
+const STATIC_PREFIX =
+  process.env.VERCEL ? "/bitacor-ai" : process.env.NODE_ENV === "production" ? "/bitacor-ai" : "";
 
-app.get(`${API_PREFIX}/api/places/autocomplete`, async (req, res) => {
-  try {
-    const q = typeof req.query.q === "string" ? req.query.q : "";
-    const result = await autocompleteCities(q);
-    res.json(result);
-  } catch (err: any) {
-    console.error("[places/autocomplete]", err);
-    res.status(500).json({ suggestions: [], source: "none", warning: err?.message || "Error" });
+// On Vercel the platform may pre-parse JSON; skip double-parse when body exists.
+app.use((req, res, next) => {
+  if (req.body !== undefined && req.body !== null && typeof req.body === "object") {
+    return next();
   }
-});
-
-app.post(`${API_PREFIX}/api/destination-categories`, async (req, res) => {
-  const started = Date.now();
-  try {
-    const ip = clientIp(req);
-    const limit = checkRateLimit(ip);
-    if (!limit.ok) {
-      return res.status(429).json({
-        error: "Demasiadas solicitudes. Intenta de nuevo en unos segundos.",
-        retryAfterSec: limit.retryAfterSec,
-      });
-    }
-
-    const destination =
-      typeof req.body?.destination === "string" ? req.body.destination.trim() : "";
-    if (!destination) {
-      return res.status(400).json({ error: "El destino es requerido." });
-    }
-
-    if (!process.env.CURSOR_API_KEY) {
-      return res.status(503).json({
-        error: "CURSOR_API_KEY no configurada.",
-        fallback: true,
-      });
-    }
-
-    const key = categoryCacheKey(destination);
-    const cached = getCachedCategories(key);
-    if (cached) {
-      return res.json({
-        categories: cached,
-        meta: { cached: true, source: "ai", totalMs: Date.now() - started },
-      });
-    }
-
-    const categories = await generateCategoriesWithCursor(destination);
-    setCachedCategories(key, categories);
-    console.log(
-      `[destination-categories] ${destination} → ${categories.length} cats (${Date.now() - started}ms)`
-    );
-    return res.json({
-      categories,
-      meta: { cached: false, source: "ai", totalMs: Date.now() - started },
-    });
-  } catch (err: any) {
-    console.error("[destination-categories]", err);
-    if (isTokenBudgetError(err)) {
-      const budget = getTokenBudgetStatus();
-      return res.status(429).json({
-        error:
-          "IA temporalmente no disponible; prueba cache/mock o más tarde.",
-        code: "TOKEN_BUDGET_EXCEEDED",
-        fallback: true,
-        meta: { budget: { blocked: true, day: budget.day } },
-      });
-    }
-    return res.status(500).json({
-      error: err?.message || "No se pudieron generar categorías.",
-      fallback: true,
-    });
-  }
+  return express.json({ limit: "256kb" })(req, res, next);
 });
 
 function clientIp(req: express.Request): string {
@@ -103,191 +45,272 @@ function clientIp(req: express.Request): string {
   return req.socket.remoteAddress || "unknown";
 }
 
-/**
- * Unified generation: Places + Weather (soft) → Cursor SDK → 2 proposals.
- * Partial failures in enrichment do not abort generation.
- */
-app.post(`${API_PREFIX}/api/generate-proposals`, async (req, res) => {
-  const started = Date.now();
-  const timings: Record<string, number> = {};
-
-  try {
-    const ip = clientIp(req);
-    const limit = checkRateLimit(ip);
-    if (!limit.ok) {
-      return res.status(429).json({
-        error: "Demasiadas solicitudes. Intenta de nuevo en unos segundos.",
-        retryAfterSec: limit.retryAfterSec,
-      });
+function mountApiRoutes(prefix: string) {
+  app.get(`${prefix}/api/places/autocomplete`, async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const result = await autocompleteCities(q);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[places/autocomplete]", err);
+      res.status(500).json({ suggestions: [], source: "none", warning: err?.message || "Error" });
     }
+  });
 
-    const body = req.body as TravelConfigInput;
-    const destination = typeof body.destination === "string" ? body.destination.trim() : "";
-    if (!destination) {
-      return res.status(400).json({ error: "El destino es requerido." });
-    }
-
-    const config: TravelConfigInput = {
-      destination,
-      days: typeof body.days === "number" && body.days > 0 ? body.days : 3,
-      budget: body.budget || "",
-      interests: Array.isArray(body.interests) ? body.interests.filter((i) => typeof i === "string") : [],
-      pace: body.pace || "",
-      arrivalDate: body.arrivalDate,
-      arrivalTime: body.arrivalTime,
-      departureDate: body.departureDate,
-      departureTime: body.departureTime,
-      lodging: typeof body.lodging === "string" ? body.lodging.trim() : undefined,
-    };
-
-    const key = cacheKey(config);
-    const cached = getCachedProposals(key);
-    if (cached) {
-      console.log(`[generate-proposals] cache hit (${Date.now() - started}ms)`);
-      return res.json({ proposals: cached, meta: { cached: true, timings: { totalMs: Date.now() - started } } });
-    }
-
-    // --- Enrichment (partial timeouts / soft fail) ---
-    const tPlaces = Date.now();
-    const placesPart = await enrichPlaces(config);
-    timings.placesMs = Date.now() - tPlaces;
-
-    const tWeather = Date.now();
-    const weatherPart = await enrichWeather(placesPart.lat, placesPart.lng, config);
-    timings.weatherMs = Date.now() - tWeather;
-
-    const enrichment: EnrichmentContext = {
-      places: placesPart.places,
-      weather: weatherPart.weather,
-      lat: placesPart.lat,
-      lng: placesPart.lng,
-      formattedAddress: placesPart.formattedAddress,
-      warnings: [...placesPart.warnings, ...weatherPart.warnings],
-    };
-
-    // --- Cursor generation ---
-    if (!process.env.CURSOR_API_KEY) {
-      return res.status(503).json({
-        error: "CURSOR_API_KEY no configurada. Usa el fallback mock en el cliente.",
-        code: "CURSOR_API_KEY_MISSING",
-        meta: { timings, warnings: enrichment.warnings },
-      });
-    }
-
-    const tCursor = Date.now();
-    const { proposals, geoWarnings } = await generateProposalsWithCursor(config, enrichment);
-    timings.cursorMs = Date.now() - tCursor;
-    timings.totalMs = Date.now() - started;
-
-    // Attach maps / coords from OSM enrichment + travel booking tips
-    const travelLinks = buildTravelDeepLinks(config);
-    const matchPlace = (name: string) =>
-      enrichment.places.find((pl) => {
-        const a = name.toLowerCase();
-        const b = pl.name.toLowerCase();
-        return a.includes(b) || b.includes(a);
-      });
-
-    for (const p of proposals) {
-      for (const cafe of p.recommendedCafesAndCoworks) {
-        const match = matchPlace(cafe.name);
-        if (match) {
-          if (cafe.lat == null && match.lat != null) cafe.lat = match.lat;
-          if (cafe.lng == null && match.lng != null) cafe.lng = match.lng;
-          if (!cafe.placeId && match.placeId) cafe.placeId = match.placeId;
-        }
-        cafe.mapsUrl = toGoogleMapsUrl(cafe.mapsUrl || match?.mapsUrl, {
-          name: cafe.name,
-          destination: config.destination,
-          lat: cafe.lat,
-          lng: cafe.lng,
-          placeId: cafe.placeId,
+  app.post(`${prefix}/api/destination-categories`, async (req, res) => {
+    const started = Date.now();
+    try {
+      const ip = clientIp(req);
+      const limit = checkRateLimit(ip);
+      if (!limit.ok) {
+        return res.status(429).json({
+          error: "Demasiadas solicitudes. Intenta de nuevo en unos segundos.",
+          retryAfterSec: limit.retryAfterSec,
         });
       }
-      for (const day of p.itinerary || []) {
-        for (const act of day.activities || []) {
-          const match = matchPlace(act.title);
-          if (match) {
-            if (act.lat == null && match.lat != null) act.lat = match.lat;
-            if (act.lng == null && match.lng != null) act.lng = match.lng;
-          }
-          if (match || act.mapsUrl || (act.lat != null && act.lng != null)) {
-            act.mapsUrl = toGoogleMapsUrl(act.mapsUrl || match?.mapsUrl, {
-              name: act.title,
-              destination: config.destination,
-              lat: act.lat,
-              lng: act.lng,
-              placeId: match?.placeId,
-            });
-          }
-          // Re-resolve category after attach (and when model stamped explore everywhere).
-          const fromPlace =
-            match?.type === "coworking"
-              ? "work"
-              : match?.type === "cafe"
-                ? "cafe"
-                : undefined;
-          const category = normalizeActivityCategory(act.category || fromPlace, {
-            title: `${act.title} ${match?.notes || ""} ${match?.type || ""}`,
-            desc: act.desc,
-            isCoworkingFriendly: act.isCoworkingFriendly,
-          });
-          act.category = category;
-          act.isCoworkingFriendly = category === "work";
-        }
-      }
-      const tipSet = new Set(p.practicalTips);
-      for (const line of travelLinks.tipLines) {
-        if (!tipSet.has(line)) p.practicalTips.push(line);
-      }
-      for (const w of geoWarnings) {
-        const tip = `Tip de ruta: ${w}`;
-        if (!tipSet.has(tip)) p.practicalTips.push(tip);
-      }
-    }
 
-    setCachedProposals(key, proposals);
-    console.log(
-      `[generate-proposals] ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
-    );
+      const destination =
+        typeof req.body?.destination === "string" ? req.body.destination.trim() : "";
+      if (!destination) {
+        return res.status(400).json({ error: "El destino es requerido." });
+      }
 
-    return res.json({
-      proposals,
-      meta: {
-        cached: false,
-        timings,
-        warnings: [...enrichment.warnings, ...geoWarnings],
-        placesCount: enrichment.places.length,
-        weatherDays: enrichment.weather.length,
-        enrichmentSource: "osm+overpass",
-        travelLinks: {
-          flightsUrl: travelLinks.flightsUrl,
-          hotelsUrl: travelLinks.hotelsUrl,
-        },
-      },
-    });
-  } catch (error: any) {
-    console.error("[generate-proposals] error:", error);
-    timings.totalMs = Date.now() - started;
-    if (isTokenBudgetError(error)) {
-      const budget = getTokenBudgetStatus();
-      return res.status(429).json({
-        error:
-          "IA temporalmente no disponible; prueba cache/mock o más tarde.",
-        code: "TOKEN_BUDGET_EXCEEDED",
-        meta: {
-          timings,
-          budget: { blocked: true, day: budget.day },
-        },
+      if (!process.env.CURSOR_API_KEY) {
+        return res.status(503).json({
+          error: "CURSOR_API_KEY no configurada.",
+          fallback: true,
+        });
+      }
+
+      const key = categoryCacheKey(destination);
+      const cached = getCachedCategories(key);
+      if (cached) {
+        return res.json({
+          categories: cached,
+          meta: { cached: true, source: "ai", totalMs: Date.now() - started },
+        });
+      }
+
+      const { generateCategoriesWithCursor } = await import("./server/cursorAgent");
+      const categories = await generateCategoriesWithCursor(destination);
+      setCachedCategories(key, categories);
+      console.log(
+        `[destination-categories] ${destination} → ${categories.length} cats (${Date.now() - started}ms)`
+      );
+      return res.json({
+        categories,
+        meta: { cached: false, source: "ai", totalMs: Date.now() - started },
+      });
+    } catch (err: any) {
+      console.error("[destination-categories]", err);
+      if (isTokenBudgetError(err)) {
+        const budget = getTokenBudgetStatus();
+        return res.status(429).json({
+          error:
+            "IA temporalmente no disponible; prueba cache/mock o más tarde.",
+          code: "TOKEN_BUDGET_EXCEEDED",
+          fallback: true,
+          meta: { budget: { blocked: true, day: budget.day } },
+        });
+      }
+      return res.status(500).json({
+        error: err?.message || "No se pudieron generar categorías.",
+        fallback: true,
       });
     }
-    return res.status(500).json({
-      error: "Ocurrió un error al generar los itinerarios.",
-      details: error?.message || String(error),
-      meta: { timings },
-    });
-  }
-});
+  });
+
+  /**
+   * Unified generation: Places + Weather (soft) → Cursor SDK → 2 proposals.
+   * Partial failures in enrichment do not abort generation.
+   */
+  app.post(`${prefix}/api/generate-proposals`, async (req, res) => {
+    const started = Date.now();
+    const timings: Record<string, number> = {};
+
+    try {
+      const ip = clientIp(req);
+      const limit = checkRateLimit(ip);
+      if (!limit.ok) {
+        return res.status(429).json({
+          error: "Demasiadas solicitudes. Intenta de nuevo en unos segundos.",
+          retryAfterSec: limit.retryAfterSec,
+        });
+      }
+
+      const body = req.body as TravelConfigInput;
+      const destination = typeof body.destination === "string" ? body.destination.trim() : "";
+      if (!destination) {
+        return res.status(400).json({ error: "El destino es requerido." });
+      }
+
+      const config: TravelConfigInput = {
+        destination,
+        days: typeof body.days === "number" && body.days > 0 ? body.days : 3,
+        budget: body.budget || "",
+        interests: Array.isArray(body.interests) ? body.interests.filter((i) => typeof i === "string") : [],
+        pace: body.pace || "",
+        arrivalDate: body.arrivalDate,
+        arrivalTime: body.arrivalTime,
+        departureDate: body.departureDate,
+        departureTime: body.departureTime,
+        lodging: typeof body.lodging === "string" ? body.lodging.trim() : undefined,
+      };
+
+      const key = cacheKey(config);
+      const cached = getCachedProposals(key);
+      if (cached) {
+        console.log(`[generate-proposals] cache hit (${Date.now() - started}ms)`);
+        return res.json({ proposals: cached, meta: { cached: true, timings: { totalMs: Date.now() - started } } });
+      }
+
+      // --- Enrichment (partial timeouts / soft fail) ---
+      const tPlaces = Date.now();
+      const placesPart = await enrichPlaces(config);
+      timings.placesMs = Date.now() - tPlaces;
+
+      const tWeather = Date.now();
+      const weatherPart = await enrichWeather(placesPart.lat, placesPart.lng, config);
+      timings.weatherMs = Date.now() - tWeather;
+
+      const enrichment: EnrichmentContext = {
+        places: placesPart.places,
+        weather: weatherPart.weather,
+        lat: placesPart.lat,
+        lng: placesPart.lng,
+        formattedAddress: placesPart.formattedAddress,
+        warnings: [...placesPart.warnings, ...weatherPart.warnings],
+      };
+
+      // --- Cursor generation ---
+      if (!process.env.CURSOR_API_KEY) {
+        return res.status(503).json({
+          error: "CURSOR_API_KEY no configurada. Usa el fallback mock en el cliente.",
+          code: "CURSOR_API_KEY_MISSING",
+          meta: { timings, warnings: enrichment.warnings },
+        });
+      }
+
+      const tCursor = Date.now();
+      const { generateProposalsWithCursor } = await import("./server/cursorAgent");
+      const { proposals, geoWarnings } = await generateProposalsWithCursor(config, enrichment);
+      timings.cursorMs = Date.now() - tCursor;
+      timings.totalMs = Date.now() - started;
+
+      // Attach maps / coords from OSM enrichment + travel booking tips
+      const travelLinks = buildTravelDeepLinks(config);
+      const matchPlace = (name: string) =>
+        enrichment.places.find((pl) => {
+          const a = name.toLowerCase();
+          const b = pl.name.toLowerCase();
+          return a.includes(b) || b.includes(a);
+        });
+
+      for (const p of proposals) {
+        for (const cafe of p.recommendedCafesAndCoworks) {
+          const match = matchPlace(cafe.name);
+          if (match) {
+            if (cafe.lat == null && match.lat != null) cafe.lat = match.lat;
+            if (cafe.lng == null && match.lng != null) cafe.lng = match.lng;
+            if (!cafe.placeId && match.placeId) cafe.placeId = match.placeId;
+          }
+          cafe.mapsUrl = toGoogleMapsUrl(cafe.mapsUrl || match?.mapsUrl, {
+            name: cafe.name,
+            destination: config.destination,
+            lat: cafe.lat,
+            lng: cafe.lng,
+            placeId: cafe.placeId,
+          });
+        }
+        for (const day of p.itinerary || []) {
+          for (const act of day.activities || []) {
+            const match = matchPlace(act.title);
+            if (match) {
+              if (act.lat == null && match.lat != null) act.lat = match.lat;
+              if (act.lng == null && match.lng != null) act.lng = match.lng;
+            }
+            if (match || act.mapsUrl || (act.lat != null && act.lng != null)) {
+              act.mapsUrl = toGoogleMapsUrl(act.mapsUrl || match?.mapsUrl, {
+                name: act.title,
+                destination: config.destination,
+                lat: act.lat,
+                lng: act.lng,
+                placeId: match?.placeId,
+              });
+            }
+            // Re-resolve category after attach (and when model stamped explore everywhere).
+            const fromPlace =
+              match?.type === "coworking"
+                ? "work"
+                : match?.type === "cafe"
+                  ? "cafe"
+                  : undefined;
+            const category = normalizeActivityCategory(act.category || fromPlace, {
+              title: `${act.title} ${match?.notes || ""} ${match?.type || ""}`,
+              desc: act.desc,
+              isCoworkingFriendly: act.isCoworkingFriendly,
+            });
+            act.category = category;
+            act.isCoworkingFriendly = category === "work";
+          }
+        }
+        const tipSet = new Set(p.practicalTips);
+        for (const line of travelLinks.tipLines) {
+          if (!tipSet.has(line)) p.practicalTips.push(line);
+        }
+        for (const w of geoWarnings) {
+          const tip = `Tip de ruta: ${w}`;
+          if (!tipSet.has(tip)) p.practicalTips.push(tip);
+        }
+      }
+
+      setCachedProposals(key, proposals);
+      console.log(
+        `[generate-proposals] ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
+      );
+
+      return res.json({
+        proposals,
+        meta: {
+          cached: false,
+          timings,
+          warnings: [...enrichment.warnings, ...geoWarnings],
+          placesCount: enrichment.places.length,
+          weatherDays: enrichment.weather.length,
+          enrichmentSource: "osm+overpass",
+          travelLinks: {
+            flightsUrl: travelLinks.flightsUrl,
+            hotelsUrl: travelLinks.hotelsUrl,
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error("[generate-proposals] error:", error);
+      timings.totalMs = Date.now() - started;
+      if (isTokenBudgetError(error)) {
+        const budget = getTokenBudgetStatus();
+        return res.status(429).json({
+          error:
+            "IA temporalmente no disponible; prueba cache/mock o más tarde.",
+          code: "TOKEN_BUDGET_EXCEEDED",
+          meta: {
+            timings,
+            budget: { blocked: true, day: budget.day },
+          },
+        });
+      }
+      return res.status(500).json({
+        error: "Ocurrió un error al generar los itinerarios.",
+        details: error?.message || String(error),
+        meta: { timings },
+      });
+    }
+  });
+}
+
+for (const prefix of apiPrefixes()) {
+  mountApiRoutes(prefix);
+}
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[server]", err);
@@ -296,9 +319,9 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 
 function setupProductionStatic() {
   const distPath = path.join(process.cwd(), "dist");
-  app.get("/", (_req, res) => res.redirect(`${API_PREFIX}/`));
-  app.use(API_PREFIX, express.static(distPath));
-  app.get(`${API_PREFIX}/*`, (_req, res) => {
+  app.get("/", (_req, res) => res.redirect(`${STATIC_PREFIX}/`));
+  app.use(STATIC_PREFIX || "/", express.static(distPath));
+  app.get(`${STATIC_PREFIX}/*`, (_req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
   });
 }
