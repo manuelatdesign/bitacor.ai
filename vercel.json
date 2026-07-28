@@ -2,6 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "framework": null,
   "redirects": [
     {
       "source": "/",
@@ -15,8 +16,20 @@
       "destination": "/assets/:path*"
     },
     {
-      "source": "/bitacor-ai/api/:path*",
-      "destination": "/api/:path*"
+      "source": "/bitacor-ai/api/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/bitacor-ai/api/places/autocomplete",
+      "destination": "/api/places/autocomplete"
+    },
+    {
+      "source": "/bitacor-ai/api/destination-categories",
+      "destination": "/api/destination-categories"
+    },
+    {
+      "source": "/bitacor-ai/api/generate-proposals",
+      "destination": "/api/generate-proposals"
     },
     {
       "source": "/bitacor-ai",
@@ -28,9 +41,21 @@
     }
   ],
   "functions": {
-    "api/[...path].ts": {
+    "api/places/autocomplete.ts": {
+      "maxDuration": 15,
+      "memory": 512
+    },
+    "api/destination-categories.ts": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "api/generate-proposals.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/health.ts": {
+      "maxDuration": 5,
+      "memory": 256
     }
   }
 }

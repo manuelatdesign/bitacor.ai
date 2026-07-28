@@ -41,4 +41,5 @@
 3. Feature producto que priorice el usuario (con `plan-first`).
 
 ## Nota
-- Rama canónica en GitHub: **`main`** (incluye subpath `/bitacor-ai` + fix Express API). Local: `npm run dev` en `:3000`.
+- Rama canónica: **`main`**. Local: `npm run dev` → `:3000`.
+- Prod Vercel: rutas API explícitas (`api/*.ts` + rewrites). Probe: `/bitacor-ai/api/health`.
