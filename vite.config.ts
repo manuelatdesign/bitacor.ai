@@ -3,11 +3,10 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(({command}) => {
+export default defineConfig(() => {
   return {
-    // Production is served behind a reverse proxy at manuelatorres.com/bitacor-ai,
-    // so built asset URLs must include that prefix. Dev stays at root.
-    base: command === 'build' ? '/bitacor-ai/' : '/',
+    // Served at site root (Vercel *.vercel.app or custom domain).
+    base: '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

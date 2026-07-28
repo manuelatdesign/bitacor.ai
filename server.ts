@@ -14,16 +14,12 @@ const PORT = 3000;
 
 /**
  * Path prefixes where /api/* is mounted.
- * - Local dev: "" → /api/...
- * - Local prod / Cloudflare without rewrite strip: "/bitacor-ai"
- * - Vercel uses dedicated files under api/*.ts (see vercel.json rewrites)
+ * - Local dev + local prod: "" → /api/...
+ * - Vercel uses dedicated files under api/*.ts (see vercel.json)
  */
 function apiPrefixes(): string[] {
-  if (process.env.NODE_ENV === "production") return ["/bitacor-ai"];
   return [""];
 }
-
-const STATIC_PREFIX = process.env.NODE_ENV === "production" ? "/bitacor-ai" : "";
 
 app.use(express.json({ limit: "256kb" }));
 
@@ -53,9 +49,8 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 
 function setupProductionStatic() {
   const distPath = path.join(process.cwd(), "dist");
-  app.get("/", (_req, res) => res.redirect(`${STATIC_PREFIX}/`));
-  app.use(STATIC_PREFIX || "/", express.static(distPath));
-  app.get(`${STATIC_PREFIX}/*`, (_req, res) => {
+  app.use(express.static(distPath));
+  app.get("*", (_req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
   });
 }

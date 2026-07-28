@@ -3,40 +3,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": null,
-  "redirects": [
-    {
-      "source": "/",
-      "destination": "/bitacor-ai/",
-      "permanent": false
-    }
-  ],
   "rewrites": [
     {
-      "source": "/bitacor-ai/assets/:path*",
-      "destination": "/assets/:path*"
-    },
-    {
-      "source": "/bitacor-ai/api/health",
-      "destination": "/api/health"
-    },
-    {
-      "source": "/bitacor-ai/api/places/autocomplete",
-      "destination": "/api/places/autocomplete"
-    },
-    {
-      "source": "/bitacor-ai/api/destination-categories",
-      "destination": "/api/destination-categories"
-    },
-    {
-      "source": "/bitacor-ai/api/generate-proposals",
-      "destination": "/api/generate-proposals"
-    },
-    {
-      "source": "/bitacor-ai",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/bitacor-ai/",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],

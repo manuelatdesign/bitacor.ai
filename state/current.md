@@ -42,4 +42,4 @@
 
 ## Nota
 - Rama canónica: **`main`**. Local: `npm run dev` → `:3000`.
-- Prod Vercel: rutas API explícitas (`api/*.ts` + rewrites). Probe: `/bitacor-ai/api/health`.
+- Prod Vercel: app en raíz (`*.vercel.app/`). APIs: `api/*.ts`. Probe: `/api/health`.
