@@ -289,6 +289,11 @@ app.post(`${API_PREFIX}/api/generate-proposals`, async (req, res) => {
   }
 });
 
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[server]", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
 function setupProductionStatic() {
   const distPath = path.join(process.cwd(), "dist");
   app.get("/", (_req, res) => res.redirect(`${API_PREFIX}/`));
@@ -315,9 +320,7 @@ async function startServer() {
   });
 }
 
-if (process.env.VERCEL) {
-  setupProductionStatic();
-} else {
+if (!process.env.VERCEL) {
   startServer();
 }
 

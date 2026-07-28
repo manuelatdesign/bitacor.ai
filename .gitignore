@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+public/bitacor-ai/
 coverage/
 .DS_Store
 *.log
