@@ -2,6 +2,7 @@ import { Agent } from "@cursor/sdk";
 import { buildCategoriesPrompt, buildCategoriesRepairPrompt } from "./categoryPrompt";
 import { buildGeoRepairPrompt, checkItineraryGeography } from "./geoCheck";
 import { buildProposalsPrompt, buildRepairPrompt } from "./prompt";
+import { agentPromptRuntime } from "./cursorRuntime";
 import {
   assertCanSpend,
   estimateTokensFromText,
@@ -41,13 +42,10 @@ async function runAgentPrompt(prompt: string, name: string): Promise<string> {
   assertCanSpend();
 
   const apiKey = requireApiKey();
-  const modelId = process.env.CURSOR_MODEL || "composer-2.5";
 
   const result = await Agent.prompt(prompt, {
     apiKey,
-    model: { id: modelId },
-    name,
-    local: { cwd: process.cwd() },
+    ...agentPromptRuntime(name),
   });
 
   if (result.status === "error" || !result.result) {

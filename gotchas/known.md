@@ -2,7 +2,7 @@
 
 ## Runtime / env
 - **Dev server:** `npm run dev` = Express+Vite en `:3000`, no `vite` solo. ERR_CONNECTION_REFUSED → proceso caído.
-- **Prod Vercel (raíz):** APIs = `api/*.ts`. `api/places/autocomplete.ts` debe ser **self-contained** (sin import a `server/` → si no, `FUNCTION_INVOCATION_FAILED`). Probe: `/api/health` luego `/api/places/autocomplete?q=Bo`. `VITE_*` solo en **build**.
+- **Prod Vercel (raíz):** APIs IA = `api/*.ts` cargan `api/_handlers.cjs` (build con `--packages=external`; no bundlear `@cursor/sdk`). Autocomplete = self-contained. Cursor en Vercel usa runtime **cloud** (`VERCEL=1`), no local. Probe: `/api/health` → `/api/places/autocomplete?q=Bo` → POST `/api/destination-categories`. `VITE_*` solo en **build**.
 - **CURSOR_API_KEY** en `.env` (dotenv en `server.ts`). Sin key → 503; cliente puede caer a mock.
 - **README obsoleto:** habla de Gemini/`.env.local`. Fuente real: `.env.example`.
 - **Nunca pegar API keys en chat.** Si se filtró: rotar en dashboard Cursor.

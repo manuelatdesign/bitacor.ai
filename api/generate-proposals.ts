@@ -1,5 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { handleGenerateProposals } from "../server/apiHandlers";
+import { createRequire } from "node:module";
+
+/**
+ * Load pre-built handlers so Vercel does not bundle @cursor/sdk (crashes with
+ * FUNCTION_INVOCATION_FAILED). Built in `npm run build` → api/_handlers.cjs.
+ */
+const require = createRequire(import.meta.url);
+const { handleGenerateProposals } = require("./_handlers.cjs") as {
+  handleGenerateProposals: (req: VercelRequest, res: VercelResponse) => Promise<unknown>;
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {

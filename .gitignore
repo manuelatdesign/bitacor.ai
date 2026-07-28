@@ -6,5 +6,6 @@
 build/
 coverage/
 dist/
+api/_handlers.cjs
 node_modules/
 public/bitacor-ai/
