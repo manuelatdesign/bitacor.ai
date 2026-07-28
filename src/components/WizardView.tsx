@@ -35,7 +35,7 @@ interface WizardViewProps {
   customDest: string;
   setCustomDest: (val: string) => void;
   isLoading: boolean;
-  generateItinerary: () => Promise<void>;
+  generateItinerary: (opts?: { regenerate?: boolean }) => Promise<void>;
   error: string | null;
   updatingExisting?: boolean;
 }

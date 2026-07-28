@@ -76,9 +76,10 @@ async function parseProposals(text: string): Promise<GeneratedItinerary[]> {
 
 export async function generateProposalsWithCursor(
   config: TravelConfigInput,
-  enrichment?: EnrichmentContext
+  enrichment?: EnrichmentContext,
+  opts?: { regenerate?: boolean }
 ): Promise<GenerateProposalsResult> {
-  const prompt = buildProposalsPrompt(config, enrichment);
+  const prompt = buildProposalsPrompt(config, enrichment, opts);
   let text = await runAgentPrompt(prompt, "bitacor-itinerary-generator");
   let proposals: GeneratedItinerary[];
 

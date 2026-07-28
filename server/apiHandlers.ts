@@ -138,6 +138,8 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
       return res.status(400).json({ error: "El destino es requerido." });
     }
 
+    const regenerate = body.regenerate === true;
+
     const config: TravelConfigInput = {
       destination,
       days: typeof body.days === "number" && body.days > 0 ? body.days : 3,
@@ -154,13 +156,17 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
     };
 
     const key = cacheKey(config);
-    const cached = getCachedProposals(key);
-    if (cached) {
-      console.log(`[generate-proposals] cache hit (${Date.now() - started}ms)`);
-      return res.json({
-        proposals: cached,
-        meta: { cached: true, timings: { totalMs: Date.now() - started } },
-      });
+    if (!regenerate) {
+      const cached = getCachedProposals(key);
+      if (cached) {
+        console.log(`[generate-proposals] cache hit (${Date.now() - started}ms)`);
+        return res.json({
+          proposals: cached,
+          meta: { cached: true, source: "ai", timings: { totalMs: Date.now() - started } },
+        });
+      }
+    } else {
+      console.log("[generate-proposals] regenerate=true — cache bypass");
     }
 
     const tPlaces = Date.now();
@@ -190,7 +196,9 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
 
     const tCursor = Date.now();
     const { generateProposalsWithCursor } = await import("./cursorAgent");
-    const { proposals, geoWarnings } = await generateProposalsWithCursor(config, enrichment);
+    const { proposals, geoWarnings } = await generateProposalsWithCursor(config, enrichment, {
+      regenerate,
+    });
     timings.cursorMs = Date.now() - tCursor;
     timings.totalMs = Date.now() - started;
 
@@ -259,7 +267,9 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
       }
     }
 
-    setCachedProposals(key, proposals);
+    if (!regenerate) {
+      setCachedProposals(key, proposals);
+    }
     console.log(
       `[generate-proposals] ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
     );
@@ -268,6 +278,8 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
       proposals,
       meta: {
         cached: false,
+        source: "ai",
+        regenerated: regenerate,
         timings,
         warnings: [...enrichment.warnings, ...geoWarnings],
         placesCount: enrichment.places.length,

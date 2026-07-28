@@ -14,6 +14,8 @@ export interface TravelConfigInput {
   departureTime?: string;
   /** User lodging: booking URL or place name. */
   lodging?: string;
+  /** Skip server cache and ask the model for a fresh take. */
+  regenerate?: boolean;
 }
 
 export interface PlaceSpot {

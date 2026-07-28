@@ -49,6 +49,9 @@ export interface GeneratedItinerary {
 
 export type StepId = 1 | 2 | 3 | 4 | 5;
 
+/** How the current draft proposals were produced. */
+export type ProposalSource = "ai" | "ai-cached" | "mock" | null;
+
 export interface TravelConfig {
   destination: string;
   days: number;

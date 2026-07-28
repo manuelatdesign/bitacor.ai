@@ -23,7 +23,7 @@
 - [x] Mapas embebidos = Google Maps JS (sin Leaflet)
 
 ## Pendiente / nice-to-have
-- [ ] Bypass cache en “Otra tanda con IA” (hoy puede devolver lo mismo)
+- [x] Bypass cache en “Otra tanda con IA” (`regenerate: true` en API + botón ResultView)
 - [ ] Auditoría UI transparencia (wizard footer + loader vs copy “3 itinerarios”)
 - [ ] Más fuentes gratis (Wikidata) si OSM flaco en alguna ciudad
 - [ ] Google Photos sync (explorado; no implementado — OAuth/API compleja)

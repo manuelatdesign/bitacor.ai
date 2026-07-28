@@ -24,7 +24,8 @@ function formatPlaceLine(p: EnrichmentContext["places"][number], i: number): str
 
 export function buildProposalsPrompt(
   config: TravelConfigInput,
-  enrichment?: EnrichmentContext
+  enrichment?: EnrichmentContext,
+  opts?: { regenerate?: boolean }
 ): string {
   const days = config.days && config.days > 0 ? config.days : 3;
   const energy = parseEnergy(config.pace);
@@ -154,6 +155,7 @@ REGLAS JSON:
 8. practicalTips (4–6): wifi/conectividad, hospedaje, transporte — tono de tip de amigo. OBLIGATORIO: cada nombre de lugar/hostal/barrio/café debe ir como markdown [Nombre](https://www.google.com/maps/search/?api=1&query=...) — SOLO Google Maps (nunca openstreetmap.org). Incluye al menos 3 tips con enlaces.
 9. shortDescription y títulos de día: 1 frase oral, concreta; Spanglish ligero OK. Sin emojis en el JSON.
 10. mapsUrl de cafés/actividades: SOLO Google Maps (search o place). Reutiliza mapsUrl del listado si ya es google.com/maps.
+${opts?.regenerate ? `\n11. NUEVA TANDA (id ${Date.now()}): propón barrios, orden del día y actividades DISTINTAS a un plan genérico anterior. Mantén el perfil del usuario pero sorprende con otro ángulo creativo.` : ""}
 
 Genera ahora el JSON.`;
 }

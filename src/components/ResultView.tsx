@@ -27,8 +27,10 @@ import {
   ExternalLink,
   ArrowLeft,
   ChevronDown,
+  RefreshCw,
 } from "lucide-react";
 import { GeneratedItinerary, TravelConfig, ItineraryActivity } from "../types";
+import type { ProposalSource } from "../types";
 import {
   ACTIVITY_CATEGORIES,
   categoryImpliesCoworking,
@@ -57,6 +59,9 @@ interface ResultViewProps {
   onDelete?: () => void;
   onEditPreferences?: () => void;
   onBackToList?: () => void;
+  proposalSource?: ProposalSource;
+  onRegenerate?: () => void;
+  isRegenerating?: boolean;
 }
 
 function cloneProposal(proposal: GeneratedItinerary): GeneratedItinerary {
@@ -120,6 +125,9 @@ export default function ResultView({
   onDelete,
   onEditPreferences,
   onBackToList,
+  proposalSource = null,
+  onRegenerate,
+  isRegenerating = false,
 }: ResultViewProps) {
   const isSavedMode = mode === "saved";
   const primarySource = useMemo(() => {
@@ -403,7 +411,34 @@ export default function ResultView({
               <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-medium tracking-[0.08em] uppercase bg-emerald-500/10 dark:bg-emerald-400/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-400/30">
                 {selectedProposal.itinerary.length} días
               </span>
+              {!isSavedMode && proposalSource === "ai" && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-medium tracking-[0.08em] uppercase bg-violet-500/10 text-violet-800 dark:text-violet-200 border border-violet-500/20">
+                  IA
+                </span>
+              )}
+              {!isSavedMode && proposalSource === "ai-cached" && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-medium tracking-[0.08em] uppercase bg-amber-500/10 text-amber-900 dark:text-amber-200 border border-amber-500/20">
+                  IA · caché
+                </span>
+              )}
+              {!isSavedMode && proposalSource === "mock" && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-medium tracking-[0.08em] uppercase bg-rose-500/10 text-rose-800 dark:text-rose-200 border border-rose-500/20">
+                  Demo (sin IA)
+                </span>
+              )}
             </div>
+            
+            {!isSavedMode && proposalSource === "mock" && (
+              <p className="mt-2 text-[10px] font-light text-rose-700/90 dark:text-rose-300/90 flex items-center gap-1.5">
+                <Info className="w-3 h-3 shrink-0" />
+                Este plan es genérico de respaldo — la IA no respondió. Usa «Otra tanda con IA» o revisa tu conexión.
+              </p>
+            )}
+            {!isSavedMode && proposalSource === "ai-cached" && (
+              <p className="mt-2 text-[10px] font-light text-[#240046]/55 dark:text-white/45">
+                Misma config que hace poco — respuesta cacheada (~3 h). «Otra tanda con IA» fuerza uno nuevo.
+              </p>
+            )}
             
             <h1 className="font-display font-extralight text-2xl sm:text-3xl md:text-[2rem] text-[#240046] dark:text-[#e2e8f0] tracking-tight leading-snug">
               {formatTripTitle(
@@ -466,6 +501,17 @@ export default function ResultView({
                   {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copied ? "¡Copiado!" : "Copiar"}</span>
                 </button>
+                {onRegenerate && (
+                  <button
+                    type="button"
+                    onClick={onRegenerate}
+                    disabled={isRegenerating}
+                    className="flex-1 sm:w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full bg-white/20 border border-[#240046]/15 dark:border-white/15 hover:bg-white/30 text-[#240046] dark:text-[#e2e8f0] font-normal text-[11px] active:scale-[0.98] transition-all duration-200 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? "animate-spin" : ""}`} />
+                    <span>{isRegenerating ? "Generando…" : "Otra tanda con IA"}</span>
+                  </button>
+                )}
               </>
             )}
           </div>

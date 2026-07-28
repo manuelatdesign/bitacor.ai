@@ -7,7 +7,7 @@ import ResultView from "./components/ResultView";
 import TripView from "./components/TripView";
 import SavedItinerariesView from "./components/SavedItinerariesView";
 import FriendsFeedView from "./components/FriendsFeedView";
-import { TravelConfig, StepId, GeneratedItinerary } from "./types";
+import { TravelConfig, StepId, GeneratedItinerary, type ProposalSource } from "./types";
 import { generateMockProposals } from "./data";
 import { resolveEnergyProfile } from "./components/EnergyPalettePicker";
 import { apiUrl } from "./lib/apiBase";
@@ -90,6 +90,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [proposals, setProposals] = useState<GeneratedItinerary[]>([]);
+  const [proposalSource, setProposalSource] = useState<ProposalSource>(null);
   /** draft = just generated; saved = opened from Guardados */
   const [resultMode, setResultMode] = useState<"draft" | "saved" | null>(null);
   const [viewingSavedId, setViewingSavedId] = useState<string | null>(null);
@@ -111,7 +112,7 @@ export default function App() {
     localStorage.setItem("bitacor_saved_itineraries", JSON.stringify(list));
   };
 
-  const generateItinerary = async () => {
+  const generateItinerary = async (opts?: { regenerate?: boolean }) => {
     if (!config.destination.trim()) {
       setError("Por favor, selecciona o ingresa un destino para continuar.");
       setCurrentStep(1);
@@ -122,42 +123,58 @@ export default function App() {
     setError(null);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90_000);
+    const timeout = setTimeout(() => controller.abort(), 120_000);
 
     try {
       const res = await fetch(apiUrl("/api/generate-proposals"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...config, regenerate: opts?.regenerate === true }),
         signal: controller.signal,
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || `HTTP ${res.status}`);
+        throw new Error(
+          typeof data.error === "string" ? data.error : `HTTP ${res.status}`
+        );
       }
 
-      const data = await res.json();
       const list = Array.isArray(data.proposals) ? data.proposals : [];
       if (list.length < 2) {
         throw new Error("La API no devolvió 2 propuestas.");
       }
       const { enrichProposalCategories } = await import("./lib/activityCategories");
       setProposals(enrichProposalCategories(list.slice(0, 2)));
+      setProposalSource(data.meta?.cached ? "ai-cached" : "ai");
       setResultMode("draft");
       setActiveTab("planner");
     } catch (err: any) {
-      console.warn("generate-proposals falló, usando mock:", err);
-      try {
-        const generated = generateMockProposals(config);
-        const { enrichProposalCategories } = await import("./lib/activityCategories");
-        setProposals(enrichProposalCategories(generated));
-        setResultMode("draft");
-        setActiveTab("planner");
-      } catch (mockErr: any) {
-        console.error(mockErr);
-        setError("No pudimos armar el plan 🙈 ¿Lo intentamos de nuevo?");
+      console.warn("generate-proposals falló:", err);
+      const msg =
+        err?.name === "AbortError"
+          ? "La IA tardó demasiado (más de 2 min). Intenta de nuevo — a veces el primer intento tarda."
+          : err?.message || "Error al generar";
+
+      if (import.meta.env.DEV) {
+        console.warn("DEV: usando mock de respaldo");
+        try {
+          const generated = generateMockProposals(config);
+          const { enrichProposalCategories } = await import("./lib/activityCategories");
+          setProposals(enrichProposalCategories(generated));
+          setProposalSource("mock");
+          setResultMode("draft");
+          setActiveTab("planner");
+          setError(`Modo dev: IA falló (${msg}). Mostrando plan mock.`);
+          return;
+        } catch (mockErr: any) {
+          console.error(mockErr);
+        }
       }
+
+      setProposalSource(null);
+      setError(`No pudimos generar con IA: ${msg} ¿Lo intentamos de nuevo?`);
     } finally {
       clearTimeout(timeout);
       setIsLoading(false);
@@ -223,8 +240,8 @@ export default function App() {
     setCustomDest("");
     setCurrentStep(1);
     setProposals([]);
+    setProposalSource(null);
     setResultMode(null);
-    setViewingSavedId(null);
     setUpdatingSavedId(null);
     setError(null);
   };
@@ -336,15 +353,33 @@ export default function App() {
             />
           )
         ) : showDraftResult ? (
-          <ResultView
-            proposals={proposals}
-            config={config}
-            setConfig={setConfig}
-            mode="draft"
-            updatingExisting={!!updatingSavedId}
-            resetAll={startNewBitacora}
-            onSaveItinerary={handleSaveItinerary}
-          />
+          <div className="relative">
+            {isLoading && (
+              <div className="absolute inset-0 z-50 overflow-hidden rounded-[2rem] border border-white/45 dark:border-white/10 shadow-2xl animate-fade-in min-h-[320px] flex items-center justify-center text-center p-8">
+                <div className="absolute inset-0 bg-white/40 dark:bg-[#0f172a]/55 backdrop-blur-[28px]" />
+                <div className="relative z-10 max-w-md">
+                  <p className="font-display font-extralight text-2xl sm:text-3xl text-[#240046] dark:text-[#e2e8f0] tracking-tight leading-snug">
+                    Generando otra tanda con IA para {config.destination || "tu viaje"}… ✨
+                  </p>
+                  <p className="mt-2 text-xs text-[#240046]/60 dark:text-white/50">
+                    Puede tardar hasta 1 minuto
+                  </p>
+                </div>
+              </div>
+            )}
+            <ResultView
+              proposals={proposals}
+              config={config}
+              setConfig={setConfig}
+              mode="draft"
+              updatingExisting={!!updatingSavedId}
+              proposalSource={proposalSource}
+              isRegenerating={isLoading}
+              onRegenerate={() => generateItinerary({ regenerate: true })}
+              resetAll={startNewBitacora}
+              onSaveItinerary={handleSaveItinerary}
+            />
+          </div>
         ) : (
           <div className="relative">
             {isLoading && (
