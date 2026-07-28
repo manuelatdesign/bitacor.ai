@@ -1,3 +1,4 @@
+import { autocompleteCities } from "./cityAutocomplete";
 import { normalizeActivityCategory } from "./activityCategories";
 import {
   cacheKey,
@@ -7,7 +8,7 @@ import {
   setCachedCategories,
   setCachedProposals,
 } from "./cache";
-import { autocompleteCities, enrichPlaces } from "./places";
+import { enrichPlaces } from "./places";
 import { checkRateLimit } from "./rateLimit";
 import { getTokenBudgetStatus, isTokenBudgetError } from "./tokenBudget";
 import type { EnrichmentContext, TravelConfigInput } from "./types";

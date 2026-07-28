@@ -1,6 +1,9 @@
 import { enrichPlacesFromOsm } from "./osmPlaces";
 import type { EnrichmentContext, PlaceSpot, TravelConfigInput } from "./types";
 
+export { autocompleteCities } from "./cityAutocomplete";
+export type { CitySuggestion } from "./cityAutocomplete";
+
 interface GeocodeResult {
   lat: number;
   lng: number;
@@ -110,98 +113,6 @@ function interestKeywords(interests: string[] = []): string[] {
     }
   }
   return [...new Set(out)].slice(0, 3);
-}
-
-export interface CitySuggestion {
-  placeId: string;
-  description: string;
-  mainText: string;
-  secondaryText: string;
-  source: "google" | "nominatim";
-}
-
-/**
- * City/locality autocomplete via Google Places (or Nominatim fallback).
- */
-export async function autocompleteCities(query: string): Promise<{
-  suggestions: CitySuggestion[];
-  source: "google" | "nominatim" | "none";
-  warning?: string;
-}> {
-  const q = query.trim();
-  if (q.length < 2) return { suggestions: [], source: "none" };
-
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
-
-  if (apiKey) {
-    try {
-      const params = new URLSearchParams({
-        input: q,
-        types: "(cities)",
-        language: "es",
-        key: apiKey,
-      });
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?${params}`;
-      const res = await fetchWithTimeout(url, { timeoutMs: 6000 });
-      if (!res.ok) throw new Error(`Autocomplete HTTP ${res.status}`);
-      const data = await res.json();
-      if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-        throw new Error(`Autocomplete falló: ${data.status}${data.error_message ? ` — ${data.error_message}` : ""}`);
-      }
-      const suggestions: CitySuggestion[] = (data.predictions || []).slice(0, 8).map((p: any) => ({
-        placeId: p.place_id || p.description,
-        description: p.description,
-        mainText: p.structured_formatting?.main_text || p.description,
-        secondaryText: p.structured_formatting?.secondary_text || "",
-        source: "google" as const,
-      }));
-      return { suggestions, source: "google" };
-    } catch (err: any) {
-      console.warn("[places/autocomplete] Google falló, usando Nominatim:", err?.message || err);
-    }
-  }
-
-  // Fallback: OpenStreetMap Nominatim (no API key)
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=8&featuretype=city&q=${encodeURIComponent(q)}`;
-    const res = await fetchWithTimeout(url, {
-      timeoutMs: 6000,
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Bitacor.ai/1.0 (travel planner)",
-      },
-    });
-    if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
-    const data = (await res.json()) as any[];
-    const suggestions: CitySuggestion[] = (data || []).map((item) => {
-      const city =
-        item.address?.city ||
-        item.address?.town ||
-        item.address?.village ||
-        item.address?.municipality ||
-        item.name ||
-        item.display_name?.split(",")[0];
-      const region = [item.address?.state, item.address?.country].filter(Boolean).join(", ");
-      return {
-        placeId: `osm-${item.place_id}`,
-        description: item.display_name,
-        mainText: city,
-        secondaryText: region,
-        source: "nominatim" as const,
-      };
-    });
-    return {
-      suggestions,
-      source: "nominatim",
-      warning: apiKey ? undefined : "GOOGLE_PLACES_API_KEY no configurada; usando OpenStreetMap.",
-    };
-  } catch (err: any) {
-    return {
-      suggestions: [],
-      source: "none",
-      warning: err?.message || "No se pudieron obtener sugerencias.",
-    };
-  }
 }
 
 /**
