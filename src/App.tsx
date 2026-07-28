@@ -10,6 +10,7 @@ import FriendsFeedView from "./components/FriendsFeedView";
 import { TravelConfig, StepId, GeneratedItinerary } from "./types";
 import { generateMockProposals } from "./data";
 import { resolveEnergyProfile } from "./components/EnergyPalettePicker";
+import { apiUrl } from "./lib/apiBase";
 
 function emptyConfig(): TravelConfig {
   return {
@@ -124,7 +125,7 @@ export default function App() {
     const timeout = setTimeout(() => controller.abort(), 90_000);
 
     try {
-      const res = await fetch("/api/generate-proposals", {
+      const res = await fetch(apiUrl("/api/generate-proposals"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),

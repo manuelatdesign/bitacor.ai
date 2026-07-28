@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MapPin, Loader2 } from "lucide-react";
+import { apiUrl } from "../lib/apiBase";
 
 export interface PlaceSuggestion {
   placeId: string;
@@ -58,7 +59,7 @@ export default function DestinationAutocomplete({
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/places/autocomplete?q=${encodeURIComponent(q)}`);
+        const res = await fetch(apiUrl(`/api/places/autocomplete?q=${encodeURIComponent(q)}`));
         const data = await res.json();
         if (cancelled) return;
         const list = Array.isArray(data.suggestions) ? data.suggestions : [];
