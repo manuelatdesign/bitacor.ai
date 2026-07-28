@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
 import { normalizeActivityCategory } from "./server/activityCategories";
 import { cacheKey, categoryCacheKey, getCachedCategories, getCachedProposals, setCachedCategories, setCachedProposals } from "./server/cache";
 import { generateCategoriesWithCursor, generateProposalsWithCursor } from "./server/cursorAgent";
@@ -290,20 +289,25 @@ app.post(`${API_PREFIX}/api/generate-proposals`, async (req, res) => {
   }
 });
 
+function setupProductionStatic() {
+  const distPath = path.join(process.cwd(), "dist");
+  app.get("/", (_req, res) => res.redirect(`${API_PREFIX}/`));
+  app.use(API_PREFIX, express.static(distPath));
+  app.get(`${API_PREFIX}/*`, (_req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.get("/", (req, res) => res.redirect(`${API_PREFIX}/`));
-    app.use(API_PREFIX, express.static(distPath));
-    app.get(`${API_PREFIX}/*`, (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    setupProductionStatic();
   }
 
   app.listen(PORT, "0.0.0.0", () => {
@@ -311,4 +315,10 @@ async function startServer() {
   });
 }
 
-startServer();
+if (process.env.VERCEL) {
+  setupProductionStatic();
+} else {
+  startServer();
+}
+
+export default app;
