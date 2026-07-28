@@ -34,8 +34,9 @@
 
 ## Blockers
 - Ninguno de código. Dependencias externas: `CURSOR_API_KEY` requerida para IA real; Places opcional.
+- Prod: configurar en Vercel `CURSOR_API_KEY` + `VITE_GOOGLE_MAPS_API_KEY` (y opcional Places) y redeploy tras el fix de `api/[...path].ts`.
 
 ## Foco sugerido próxima sesión
-1. Reforzar prompts del pipeline (prefs + A/B distintos + tono + research), o
-2. Pasar `lodging` al pipeline/prompt, o
+1. Verificar prod tras deploy Domain (autocomplete + generate + mapas), o
+2. Reforzar prompts del pipeline (prefs + A/B distintos + tono + research), o
 3. Feature producto que priorice el usuario (con `plan-first`).

@@ -2,6 +2,7 @@
 
 ## Runtime / env
 - **Dev server:** `npm run dev` = Express+Vite en `:3000`, no `vite` solo. ERR_CONNECTION_REFUSED → proceso caído.
+- **Prod Vercel (`/bitacor-ai`):** APIs vía `api/[...path].ts` → export directo del Express app (no wrappear en Promise/`next` o cuelga → `FUNCTION_INVOCATION_FAILED`). Rutas montadas en `/api/*` y `/bitacor-ai/api/*`. Static = `outputDirectory: dist` + rewrites. `VITE_*` solo aplican en **build**; runtime keys en Vercel env.
 - **CURSOR_API_KEY** en `.env` (dotenv en `server.ts`). Sin key → 503; cliente puede caer a mock.
 - **README obsoleto:** habla de Gemini/`.env.local`. Fuente real: `.env.example`.
 - **Nunca pegar API keys en chat.** Si se filtró: rotar en dashboard Cursor.
