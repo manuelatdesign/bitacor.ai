@@ -2,7 +2,7 @@
 
 ## Runtime / env
 - **Dev server:** `npm run dev` = Express+Vite en `:3000`, no `vite` solo. ERR_CONNECTION_REFUSED → proceso caído.
-- **Prod Vercel (`/bitacor-ai`):** APIs = archivos explícitos `api/places/autocomplete.ts`, `api/destination-categories.ts`, `api/generate-proposals.ts`, `api/health.ts` + rewrites en `vercel.json`. Lógica compartida en `server/apiHandlers.ts`. No usar catch-all Express en Vercel (404/hang). `VITE_*` solo en **build**; runtime keys en env Vercel. Probe: `/bitacor-ai/api/health`.
+- **Prod Vercel (`/bitacor-ai`):** APIs = `api/*.ts` + rewrites. `api/places/autocomplete.ts` debe ser **self-contained** (sin import a `server/` → si no, `FUNCTION_INVOCATION_FAILED`). Probe: `/bitacor-ai/api/health` luego `/bitacor-ai/api/places/autocomplete?q=Bo`. `VITE_*` solo en **build**.
 - **CURSOR_API_KEY** en `.env` (dotenv en `server.ts`). Sin key → 503; cliente puede caer a mock.
 - **README obsoleto:** habla de Gemini/`.env.local`. Fuente real: `.env.example`.
 - **Nunca pegar API keys en chat.** Si se filtró: rotar en dashboard Cursor.
