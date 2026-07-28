@@ -17,10 +17,5 @@
       "source": "/bitacor-ai/",
       "destination": "/bitacor-ai/index.html"
     }
-  ],
-  "functions": {
-    "server.ts": {
-      "maxDuration": 60
-    }
-  }
+  ]
 }
