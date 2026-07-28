@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "redirects": [
     {
       "source": "/",
@@ -10,12 +11,25 @@
   ],
   "rewrites": [
     {
+      "source": "/bitacor-ai/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/bitacor-ai/api/:path*",
+      "destination": "/api/:path*"
+    },
+    {
       "source": "/bitacor-ai",
-      "destination": "/bitacor-ai/index.html"
+      "destination": "/index.html"
     },
     {
       "source": "/bitacor-ai/",
-      "destination": "/bitacor-ai/index.html"
+      "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/[...path].ts": {
+      "maxDuration": 60
+    }
+  }
 }

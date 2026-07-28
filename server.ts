@@ -17,10 +17,10 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Production is served behind a reverse proxy at manuelatorres.com/bitacor-ai
-// (Cloudflare Worker → this Vercel deployment), which forwards the full path.
-// Dev keeps everything at root since it's accessed directly on localhost.
-const API_PREFIX = process.env.NODE_ENV === "production" ? "/bitacor-ai" : "";
+// Dev/local node: routes at /api/*. Local prod + Cloudflare proxy: /bitacor-ai/api/*.
+// Vercel serverless (api/[...path].ts): rewrite strips prefix, routes stay at /api/*.
+const API_PREFIX =
+  process.env.VERCEL ? "" : process.env.NODE_ENV === "production" ? "/bitacor-ai" : "";
 
 app.use(express.json({ limit: "256kb" }));
 
