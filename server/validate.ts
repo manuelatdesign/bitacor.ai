@@ -190,6 +190,32 @@ export function validateProposalsPayload(raw: unknown): GeneratedItinerary[] {
   return [primary, optionB];
 }
 
+/** Progressive: validate a single proposal (Principal or Opción B). */
+export function validateSingleProposalPayload(
+  raw: unknown,
+  expectedType: "Principal" | "Opción B"
+): GeneratedItinerary {
+  if (!isRecord(raw)) {
+    throw new Error("El JSON raíz debe ser un objeto.");
+  }
+
+  let candidate: unknown = raw;
+  if (Array.isArray(raw.proposals) && raw.proposals.length > 0) {
+    candidate = raw.proposals[0];
+  } else if (isRecord(raw.proposal)) {
+    candidate = raw.proposal;
+  } else if (Array.isArray(raw) && raw.length > 0) {
+    candidate = (raw as unknown[])[0];
+  }
+
+  const proposal = normalizeProposal(candidate, expectedType);
+  if (!proposal) {
+    throw new Error(`Propuesta ${expectedType} inválida (faltan días/actividades).`);
+  }
+  proposal.proposalType = expectedType;
+  return proposal;
+}
+
 const ALLOWED_ICONS = new Set([
   "laptop_mac",
   "local_cafe",

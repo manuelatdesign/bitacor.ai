@@ -51,9 +51,9 @@ logs/                     ← resúmenes comprimidos de sesiones
 - **Producto:** itinerarios híbridos (trabajo + exploración) + diario fotográfico en viaje.
 - **IA:** Cursor SDK (`Agent.prompt`), no Gemini. Key: `CURSOR_API_KEY`. Modelo: `CURSOR_MODEL` (default `composer-2.5`).
 - **Tokens:** presupuesto server-side menor al 100% del plan Cursor diario (`CURSOR_PLAN_DAILY_TOKEN_LIMIT` × `CURSOR_APP_BUDGET_RATIO`, default 0.4). Ver `contexto/token-budget.md`.
-- **Output IA:** exactamente **2** propuestas: `Principal` + `Opción B` (no 3 arquetipos); deben ser distintas y usar todas las prefs.
+- **Output IA:** exactamente **2** propuestas: `Principal` + `Opción B` (progresivo: Principal primero, Opción B en segundo plano).
 - **Post-generación:** abrir directo Principal; switch a Opción B dentro de `ResultView` (sin pantalla de comparación).
-- **Enrichment soft-fail:** Places/Weather pueden fallar; la generación continúa.
+- **Enrichment soft-fail:** OSM/Places pueden fallar; la generación continúa. Sin weather en hot path.
 - **Validación:** JSON del agente se parsea + valida en servidor (`server/validate.ts`); retry con repair prompt si falla.
 - **Persistencia cliente:** itinerarios en `localStorage` (`bitacor_saved_itineraries`); fotos en IndexedDB (`bitacor_trip`).
 - **Tabs header:** Planificador | En el viaje | Amigos | Guardados. Sin switch legacy planificador/viaje. Feed Amigos = demo mock (sin backend social).
@@ -66,8 +66,8 @@ logs/                     ← resúmenes comprimidos de sesiones
 
 ```
 Cliente (src/)                Servidor (server.ts + server/)
-WizardView → App.tsx          POST /api/generate-proposals
-  → ResultView                  Places → Weather → Cursor → validate
+WizardView → App.tsx          POST /api/generate-proposals (stage principal → optionB)
+ → ResultView                  OSM → Cursor Principal → UI → Cursor Opción B
 TripView (Google Maps+camera) POST /api/destination-categories
 FriendsFeedView (demo)        GET  /api/places/autocomplete
 SavedItinerariesView
@@ -121,7 +121,7 @@ Dev: `npm run dev` → Express+Vite middleware en `:3000`.
 | API gen | `server.ts`, `server/cursorAgent.ts`, `server/prompt.ts`, `server/validate.ts` |
 | Token budget | `server/tokenBudget.ts`, `contexto/token-budget.md` |
 | Categorías IA | `server/categoryPrompt.ts`, `server/cursorAgent.ts` |
-| Places/clima | `server/places.ts`, `server/weather.ts`, `server/cache.ts` |
+| Places/OSM | `server/places.ts`, `server/osmPlaces.ts`, `server/cache.ts` |
 | Tipos | `src/types.ts`, `server/types.ts` |
 
 ## Anti-patrones de contexto

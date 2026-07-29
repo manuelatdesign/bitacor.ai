@@ -24,6 +24,7 @@ Fuente detallada: `decisions/`. Este archivo es el índice denso.
 | 2026-07-23 | D19 | Tip/reserva condicionales en actividades; mapa en tab spots (Google Maps, D21) |
 | 2026-07-23 | D20 | Token budget SDK: plan × ratio (default 0.4); sin UI; geo-repair off |
 | 2026-07-23 | D21 | Mapas UI = Google Maps JS; Leaflet eliminado |
+| 2026-07-29 | D22 | Generación progresiva + sin weather; Overpass acotado |
 
 Diseño visual canónico: `contexto/design.md`.
 Arquitectura: `contexto/arquitectura.md`.

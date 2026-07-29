@@ -7,7 +7,7 @@
 ## APIs
 | Método | Path | Rol |
 |--------|------|-----|
-| POST | `/api/generate-proposals` | Places→Weather→Cursor→2 itinerarios + tips viajes |
+| POST | `/api/generate-proposals` | OSM → Cursor progresivo (`stage: principal` \| `optionB`) + tips |
 | POST | `/api/destination-categories` | Categorías de intereses IA por destino (cache) |
 | GET | `/api/places/autocomplete?q=` | Autocomplete ciudades (Places o vacío) |
 
@@ -17,11 +17,11 @@ Token budget: `server/tokenBudget.ts` — gate antes de cada `Agent.prompt` (ver
 
 ## Pipeline generación
 1. Validar `TravelConfigInput` (destino required; incluye `lodging` opcional).
-2. Cache hit → return.
-3. Enrichment gratis: Nominatim + Overpass OSM (`server/osmPlaces.ts`) → clima Open-Meteo. Google Places solo suplemento opcional.
-4. `generateProposalsWithCursor` → validate → repair JSON → geo-check (haversine) → geo-repair **off** por default (tips soft).
-5. Deep-links Maps + tipLines vuelos/hoteles + tips de ruta si aplica.
-6. Cache set → JSON `{ proposals, meta }` (`enrichmentSource: osm+overpass`).
+2. Cache hit (par completo) → return ambas propuestas.
+3. Enrichment OSM (Nominatim + Overpass race ~8s); sin weather; Google Nearby off en hot path. Cache enrichment 30 min.
+4. `stage=principal` → `generatePrincipalWithCursor` → validate/repair → geo-check (geo-repair off).
+5. Cliente muestra Principal; `stage=optionB` + `principal` → `generateOptionBWithCursor` → cache par completo.
+6. Deep-links Maps + tipLines vuelos/hoteles + tips de ruta si aplica.
 
 Cliente fallback mock: `generateMockProposals` en `src/data.ts` si 503/429/error (no cargar data.ts entero salvo tocar mocks).
 

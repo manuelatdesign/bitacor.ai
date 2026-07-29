@@ -50,4 +50,4 @@ Fuente de verdad del marco Delegación / Descripción / Discernimiento / Diligen
 
 ### Gap actual (honesto)
 
-Pipeline hoy: Places + Weather + prompt Cursor (+ validate/repair). La **investigación web** amplia no es un paso separado garantizado. Reforzar en prompts/tools cuando se toque el pipeline — ver `state/current.md`.
+Pipeline hoy: OSM + prompt Cursor progresivo (Principal → Opción B) (+ validate/repair). Sin weather. La **investigación web** amplia no es un paso separado garantizado.

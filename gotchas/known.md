@@ -20,7 +20,7 @@
 - **Token budget:** sin `CURSOR_PLAN_DAILY_TOKEN_LIMIT` no bloquea (solo log). Con límite: 429 `TOKEN_BUDGET_EXCEEDED`. Contador en `.data/token-budget.json`. Ver `contexto/token-budget.md`.
 - **Geo-repair:** off por default (`CURSOR_DISABLE_GEO_REPAIR=true`); tips soft si hay saltos.
 - **Cache in-memory:** reinicio de server limpia cache de propuestas; el budget sí persiste en `.data/`. TTL configurable por env.
-- **Enrichment POIs:** Nominatim + Overpass (gratis). Respeta rate limits / User-Agent. Si Overpass timeout → itinerario sin coords (geo-check se salta).
+- **Enrichment POIs:** Nominatim + Overpass race (~8s). Sin weather en generate. Si Overpass timeout → itinerario con coords de ciudad / sin POIs.
 - **Categorías por destino:** híbrido catálogo/IA; regenerar fuerza IA.
 - **Tipos duales:** cambios de shape → sync `src/types.ts` y `server/types.ts`.
 

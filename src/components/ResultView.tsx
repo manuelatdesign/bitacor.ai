@@ -62,6 +62,8 @@ interface ResultViewProps {
   proposalSource?: ProposalSource;
   onRegenerate?: () => void;
   isRegenerating?: boolean;
+  /** Progressive: Opción B still generating while Principal is shown */
+  optionBLoading?: boolean;
 }
 
 function cloneProposal(proposal: GeneratedItinerary): GeneratedItinerary {
@@ -128,6 +130,7 @@ export default function ResultView({
   proposalSource = null,
   onRegenerate,
   isRegenerating = false,
+  optionBLoading = false,
 }: ResultViewProps) {
   const isSavedMode = mode === "saved";
   const primarySource = useMemo(() => {
@@ -167,14 +170,17 @@ export default function ResultView({
   const [newTime, setNewTime] = useState<string>("");
   const [newCategory, setNewCategory] = useState<ActivityCategoryId>("explore");
 
-  // Ensure Principal loads when proposals arrive / change
+  // Sync Principal when proposals arrive / regenerate; keep Principal while Opción B loads
   useEffect(() => {
-    if (!selectedProposal && primarySource) {
-      setSelectedProposal(cloneProposal(primarySource));
-      setActiveVariant("principal");
-      setSelectedDayIdx(0);
-    }
-  }, [primarySource, selectedProposal]);
+    if (!primarySource) return;
+    setSelectedProposal(cloneProposal(primarySource));
+    setActiveVariant("principal");
+    setSelectedDayIdx(0);
+  }, [
+    primarySource?.destinationTitle,
+    primarySource?.shortDescription,
+    primarySource?.itinerary?.length,
+  ]);
 
   const tipPlaces = useMemo(() => {
     if (!selectedProposal) return [];
@@ -403,6 +409,18 @@ export default function ResultView({
                     <Moon className="w-3 h-3" />
                     Opción B
                   </button>
+                </div>
+              )}
+              {!optionBSource && optionBLoading && !isSavedMode && (
+                <div className="flex items-center bg-white/40 dark:bg-white/10 backdrop-blur-md p-0.5 rounded-xl border border-[#240046]/10 dark:border-white/15">
+                  <span className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg text-[9px] font-mono font-bold uppercase tracking-wider bg-[#240046] text-white shadow-sm dark:bg-[#ed93af] dark:text-[#240046]">
+                    <Zap className="w-3 h-3" />
+                    Principal
+                  </span>
+                  <span className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg text-[9px] font-mono font-bold uppercase tracking-wider text-[#240046]/45 dark:text-white/45">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    Opción B…
+                  </span>
                 </div>
               )}
               <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-medium tracking-[0.08em] uppercase bg-[#240046]/12 dark:bg-white/12 text-[#240046] dark:text-[#e2e8f0] border border-[#240046]/10 dark:border-white/20">

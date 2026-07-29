@@ -4,17 +4,18 @@ import {
   cacheKey,
   categoryCacheKey,
   getCachedCategories,
+  getCachedEnrichment,
   getCachedProposals,
   setCachedCategories,
+  setCachedEnrichment,
   setCachedProposals,
 } from "./cache";
 import { enrichPlaces } from "./places";
 import { checkRateLimit } from "./rateLimit";
 import { getTokenBudgetStatus, isTokenBudgetError } from "./tokenBudget";
-import type { EnrichmentContext, TravelConfigInput } from "./types";
+import type { EnrichmentContext, GeneratedItinerary, TravelConfigInput } from "./types";
 import { toGoogleMapsUrl } from "./googleMaps";
 import { buildTravelDeepLinks } from "./travelExtras";
-import { enrichWeather } from "./weather";
 
 /** Minimal req/res shared by Express (local) and Vercel serverless. */
 export type ApiRequest = {
@@ -118,6 +119,103 @@ export async function handleDestinationCategories(req: ApiRequest, res: ApiRespo
   }
 }
 
+function parseConfig(body: TravelConfigInput): TravelConfigInput | null {
+  const destination = typeof body.destination === "string" ? body.destination.trim() : "";
+  if (!destination) return null;
+  return {
+    destination,
+    days: typeof body.days === "number" && body.days > 0 ? body.days : 3,
+    budget: body.budget || "",
+    interests: Array.isArray(body.interests)
+      ? body.interests.filter((i) => typeof i === "string")
+      : [],
+    pace: body.pace || "",
+    arrivalDate: body.arrivalDate,
+    arrivalTime: body.arrivalTime,
+    departureDate: body.departureDate,
+    departureTime: body.departureTime,
+    lodging: typeof body.lodging === "string" ? body.lodging.trim() : undefined,
+  };
+}
+
+function finalizeProposals(
+  proposals: GeneratedItinerary[],
+  enrichment: EnrichmentContext,
+  config: TravelConfigInput,
+  geoWarnings: string[]
+): { proposals: GeneratedItinerary[]; travelLinks: ReturnType<typeof buildTravelDeepLinks> } {
+  const travelLinks = buildTravelDeepLinks(config);
+  const matchPlace = (name: string) =>
+    enrichment.places.find((pl) => {
+      const a = name.toLowerCase();
+      const b = pl.name.toLowerCase();
+      return a.includes(b) || b.includes(a);
+    });
+
+  for (const p of proposals) {
+    for (const cafe of p.recommendedCafesAndCoworks) {
+      const match = matchPlace(cafe.name);
+      if (match) {
+        if (cafe.lat == null && match.lat != null) cafe.lat = match.lat;
+        if (cafe.lng == null && match.lng != null) cafe.lng = match.lng;
+        if (!cafe.placeId && match.placeId) cafe.placeId = match.placeId;
+      }
+      cafe.mapsUrl = toGoogleMapsUrl(cafe.mapsUrl || match?.mapsUrl, {
+        name: cafe.name,
+        destination: config.destination,
+        lat: cafe.lat,
+        lng: cafe.lng,
+        placeId: cafe.placeId,
+      });
+    }
+    for (const day of p.itinerary || []) {
+      for (const act of day.activities || []) {
+        const match = matchPlace(act.title);
+        if (match) {
+          if (act.lat == null && match.lat != null) act.lat = match.lat;
+          if (act.lng == null && match.lng != null) act.lng = match.lng;
+        }
+        if (match || act.mapsUrl || (act.lat != null && act.lng != null)) {
+          act.mapsUrl = toGoogleMapsUrl(act.mapsUrl || match?.mapsUrl, {
+            name: act.title,
+            destination: config.destination,
+            lat: act.lat,
+            lng: act.lng,
+            placeId: match?.placeId,
+          });
+        }
+        const fromPlace =
+          match?.type === "coworking" ? "work" : match?.type === "cafe" ? "cafe" : undefined;
+        const category = normalizeActivityCategory(act.category || fromPlace, {
+          title: `${act.title} ${match?.notes || ""} ${match?.type || ""}`,
+          desc: act.desc,
+          isCoworkingFriendly: act.isCoworkingFriendly,
+        });
+        act.category = category;
+        act.isCoworkingFriendly = category === "work";
+      }
+    }
+    const tipSet = new Set(p.practicalTips);
+    for (const line of travelLinks.tipLines) {
+      if (!tipSet.has(line)) p.practicalTips.push(line);
+    }
+    for (const w of geoWarnings) {
+      const tip = `Tip de ruta: ${w}`;
+      if (!tipSet.has(tip)) p.practicalTips.push(tip);
+    }
+  }
+  return { proposals, travelLinks };
+}
+
+function isGeneratedItinerary(v: unknown): v is GeneratedItinerary {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    Array.isArray((v as GeneratedItinerary).itinerary) &&
+    typeof (v as GeneratedItinerary).proposalType === "string"
+  );
+}
+
 export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse) {
   const started = Date.now();
   const timings: Record<string, number> = {};
@@ -132,146 +230,143 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
       });
     }
 
-    const body = (req.body ?? {}) as TravelConfigInput;
-    const destination = typeof body.destination === "string" ? body.destination.trim() : "";
-    if (!destination) {
+    const body = (req.body ?? {}) as TravelConfigInput & {
+      principal?: unknown;
+    };
+    const config = parseConfig(body);
+    if (!config) {
       return res.status(400).json({ error: "El destino es requerido." });
     }
 
     const regenerate = body.regenerate === true;
-
-    const config: TravelConfigInput = {
-      destination,
-      days: typeof body.days === "number" && body.days > 0 ? body.days : 3,
-      budget: body.budget || "",
-      interests: Array.isArray(body.interests)
-        ? body.interests.filter((i) => typeof i === "string")
-        : [],
-      pace: body.pace || "",
-      arrivalDate: body.arrivalDate,
-      arrivalTime: body.arrivalTime,
-      departureDate: body.departureDate,
-      departureTime: body.departureTime,
-      lodging: typeof body.lodging === "string" ? body.lodging.trim() : undefined,
-    };
-
+    const stage: "principal" | "optionB" =
+      body.stage === "optionB" ? "optionB" : "principal";
     const key = cacheKey(config);
-    if (!regenerate) {
+
+    // Full-pair cache only on principal stage (instant both proposals)
+    if (stage === "principal" && !regenerate) {
       const cached = getCachedProposals(key);
-      if (cached) {
+      if (cached && cached.length >= 2) {
         console.log(`[generate-proposals] cache hit (${Date.now() - started}ms)`);
         return res.json({
           proposals: cached,
-          meta: { cached: true, source: "ai", timings: { totalMs: Date.now() - started } },
+          meta: {
+            cached: true,
+            source: "ai",
+            stage: "complete",
+            pendingOptionB: false,
+            timings: { totalMs: Date.now() - started },
+          },
         });
       }
-    } else {
+    } else if (regenerate && stage === "principal") {
       console.log("[generate-proposals] regenerate=true — cache bypass");
     }
-
-    const tPlaces = Date.now();
-    const placesPart = await enrichPlaces(config);
-    timings.placesMs = Date.now() - tPlaces;
-
-    const tWeather = Date.now();
-    const weatherPart = await enrichWeather(placesPart.lat, placesPart.lng, config);
-    timings.weatherMs = Date.now() - tWeather;
-
-    const enrichment: EnrichmentContext = {
-      places: placesPart.places,
-      weather: weatherPart.weather,
-      lat: placesPart.lat,
-      lng: placesPart.lng,
-      formattedAddress: placesPart.formattedAddress,
-      warnings: [...placesPart.warnings, ...weatherPart.warnings],
-    };
 
     if (!process.env.CURSOR_API_KEY) {
       return res.status(503).json({
         error: "CURSOR_API_KEY no configurada. Usa el fallback mock en el cliente.",
         code: "CURSOR_API_KEY_MISSING",
-        meta: { timings, warnings: enrichment.warnings },
+        meta: { timings },
       });
     }
 
+    // Enrichment: reuse in-memory cache when possible (optionB / same config)
+    let enrichment = !regenerate ? getCachedEnrichment(key) : null;
+    if (!enrichment) {
+      const tPlaces = Date.now();
+      const placesPart = await enrichPlaces(config);
+      timings.placesMs = Date.now() - tPlaces;
+      enrichment = {
+        places: placesPart.places,
+        lat: placesPart.lat,
+        lng: placesPart.lng,
+        formattedAddress: placesPart.formattedAddress,
+        warnings: [...placesPart.warnings],
+      };
+      setCachedEnrichment(key, enrichment);
+    } else {
+      timings.placesMs = 0;
+    }
+
+    const {
+      generatePrincipalWithCursor,
+      generateOptionBWithCursor,
+    } = await import("./cursorAgent");
+
+    if (stage === "optionB") {
+      if (!isGeneratedItinerary(body.principal)) {
+        return res.status(400).json({
+          error: "stage=optionB requiere el objeto principal generado.",
+        });
+      }
+      const principalIn = body.principal;
+      principalIn.proposalType = "Principal";
+
+      const tCursor = Date.now();
+      const { proposal: optionB, geoWarnings } = await generateOptionBWithCursor(
+        config,
+        enrichment,
+        principalIn,
+        { regenerate }
+      );
+      timings.cursorMs = Date.now() - tCursor;
+      timings.totalMs = Date.now() - started;
+
+      const { proposals, travelLinks } = finalizeProposals(
+        [principalIn, optionB],
+        enrichment,
+        config,
+        geoWarnings
+      );
+
+      if (!regenerate) {
+        setCachedProposals(key, proposals);
+      }
+
+      console.log(
+        `[generate-proposals] optionB ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
+      );
+
+      return res.json({
+        proposals,
+        meta: {
+          cached: false,
+          source: "ai",
+          stage: "optionB",
+          pendingOptionB: false,
+          regenerated: regenerate,
+          timings,
+          warnings: [...enrichment.warnings, ...geoWarnings],
+          placesCount: enrichment.places.length,
+          enrichmentSource: "osm+overpass",
+          travelLinks: {
+            flightsUrl: travelLinks.flightsUrl,
+            hotelsUrl: travelLinks.hotelsUrl,
+          },
+        },
+      });
+    }
+
+    // stage === principal
     const tCursor = Date.now();
-    const { generateProposalsWithCursor } = await import("./cursorAgent");
-    const { proposals, geoWarnings } = await generateProposalsWithCursor(config, enrichment, {
-      regenerate,
-    });
+    const { proposal: principal, geoWarnings } = await generatePrincipalWithCursor(
+      config,
+      enrichment,
+      { regenerate }
+    );
     timings.cursorMs = Date.now() - tCursor;
     timings.totalMs = Date.now() - started;
 
-    const travelLinks = buildTravelDeepLinks(config);
-    const matchPlace = (name: string) =>
-      enrichment.places.find((pl) => {
-        const a = name.toLowerCase();
-        const b = pl.name.toLowerCase();
-        return a.includes(b) || b.includes(a);
-      });
+    const { proposals, travelLinks } = finalizeProposals(
+      [principal],
+      enrichment,
+      config,
+      geoWarnings
+    );
 
-    for (const p of proposals) {
-      for (const cafe of p.recommendedCafesAndCoworks) {
-        const match = matchPlace(cafe.name);
-        if (match) {
-          if (cafe.lat == null && match.lat != null) cafe.lat = match.lat;
-          if (cafe.lng == null && match.lng != null) cafe.lng = match.lng;
-          if (!cafe.placeId && match.placeId) cafe.placeId = match.placeId;
-        }
-        cafe.mapsUrl = toGoogleMapsUrl(cafe.mapsUrl || match?.mapsUrl, {
-          name: cafe.name,
-          destination: config.destination,
-          lat: cafe.lat,
-          lng: cafe.lng,
-          placeId: cafe.placeId,
-        });
-      }
-      for (const day of p.itinerary || []) {
-        for (const act of day.activities || []) {
-          const match = matchPlace(act.title);
-          if (match) {
-            if (act.lat == null && match.lat != null) act.lat = match.lat;
-            if (act.lng == null && match.lng != null) act.lng = match.lng;
-          }
-          if (match || act.mapsUrl || (act.lat != null && act.lng != null)) {
-            act.mapsUrl = toGoogleMapsUrl(act.mapsUrl || match?.mapsUrl, {
-              name: act.title,
-              destination: config.destination,
-              lat: act.lat,
-              lng: act.lng,
-              placeId: match?.placeId,
-            });
-          }
-          const fromPlace =
-            match?.type === "coworking"
-              ? "work"
-              : match?.type === "cafe"
-                ? "cafe"
-                : undefined;
-          const category = normalizeActivityCategory(act.category || fromPlace, {
-            title: `${act.title} ${match?.notes || ""} ${match?.type || ""}`,
-            desc: act.desc,
-            isCoworkingFriendly: act.isCoworkingFriendly,
-          });
-          act.category = category;
-          act.isCoworkingFriendly = category === "work";
-        }
-      }
-      const tipSet = new Set(p.practicalTips);
-      for (const line of travelLinks.tipLines) {
-        if (!tipSet.has(line)) p.practicalTips.push(line);
-      }
-      for (const w of geoWarnings) {
-        const tip = `Tip de ruta: ${w}`;
-        if (!tipSet.has(tip)) p.practicalTips.push(tip);
-      }
-    }
-
-    if (!regenerate) {
-      setCachedProposals(key, proposals);
-    }
     console.log(
-      `[generate-proposals] ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
+      `[generate-proposals] principal ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
     );
 
     return res.json({
@@ -279,11 +374,12 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
       meta: {
         cached: false,
         source: "ai",
+        stage: "principal",
+        pendingOptionB: true,
         regenerated: regenerate,
         timings,
         warnings: [...enrichment.warnings, ...geoWarnings],
         placesCount: enrichment.places.length,
-        weatherDays: enrichment.weather.length,
         enrichmentSource: "osm+overpass",
         travelLinks: {
           flightsUrl: travelLinks.flightsUrl,

@@ -88,6 +88,7 @@ export default function App() {
   const [currentStep, setCurrentStep] = useState<StepId>(1);
   const [customDest, setCustomDest] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [optionBLoading, setOptionBLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [proposals, setProposals] = useState<GeneratedItinerary[]>([]);
   const [proposalSource, setProposalSource] = useState<ProposalSource>(null);
@@ -120,16 +121,22 @@ export default function App() {
     }
 
     setIsLoading(true);
+    setOptionBLoading(false);
     setError(null);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
+    const timeout = setTimeout(() => controller.abort(), 90_000);
+    const regenerate = opts?.regenerate === true;
 
     try {
       const res = await fetch(apiUrl("/api/generate-proposals"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...config, regenerate: opts?.regenerate === true }),
+        body: JSON.stringify({
+          ...config,
+          regenerate,
+          stage: "principal",
+        }),
         signal: controller.signal,
       });
 
@@ -142,19 +149,63 @@ export default function App() {
       }
 
       const list = Array.isArray(data.proposals) ? data.proposals : [];
-      if (list.length < 2) {
-        throw new Error("La API no devolvió 2 propuestas.");
+      if (list.length < 1) {
+        throw new Error("La API no devolvió la propuesta Principal.");
       }
+
       const { enrichProposalCategories } = await import("./lib/activityCategories");
-      setProposals(enrichProposalCategories(list.slice(0, 2)));
+      const principalBatch = enrichProposalCategories(list.slice(0, 2));
+      setProposals(principalBatch);
       setProposalSource(data.meta?.cached ? "ai-cached" : "ai");
       setResultMode("draft");
       setActiveTab("planner");
+      setIsLoading(false);
+
+      const pendingOptionB = data.meta?.pendingOptionB === true && principalBatch.length < 2;
+      if (!pendingOptionB) {
+        setOptionBLoading(false);
+        return;
+      }
+
+      // Progressive: show Principal now; fetch Opción B in background
+      setOptionBLoading(true);
+      try {
+        const resB = await fetch(apiUrl("/api/generate-proposals"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...config,
+            regenerate,
+            stage: "optionB",
+            principal: principalBatch[0],
+          }),
+          signal: controller.signal,
+        });
+        const dataB = await resB.json().catch(() => ({}));
+        if (!resB.ok) {
+          throw new Error(
+            typeof dataB.error === "string" ? dataB.error : `HTTP ${resB.status}`
+          );
+        }
+        const listB = Array.isArray(dataB.proposals) ? dataB.proposals : [];
+        if (listB.length >= 2) {
+          setProposals(enrichProposalCategories(listB.slice(0, 2)));
+        } else if (listB.length === 1 && listB[0]?.proposalType?.toLowerCase().includes("opción")) {
+          setProposals(enrichProposalCategories([principalBatch[0], listB[0]]));
+        }
+      } catch (optErr: any) {
+        console.warn("Opción B falló (Principal ya visible):", optErr);
+        setError(
+          `Principal listo. Opción B no llegó (${optErr?.message || "error"}). Puedes regenerar.`
+        );
+      } finally {
+        setOptionBLoading(false);
+      }
     } catch (err: any) {
       console.warn("generate-proposals falló:", err);
       const msg =
         err?.name === "AbortError"
-          ? "La IA tardó demasiado (más de 2 min). Intenta de nuevo — a veces el primer intento tarda."
+          ? "La IA tardó demasiado. Intenta de nuevo — a veces el primer intento tarda."
           : err?.message || "Error al generar";
 
       if (import.meta.env.DEV) {
@@ -243,6 +294,7 @@ export default function App() {
     setProposalSource(null);
     setResultMode(null);
     setUpdatingSavedId(null);
+    setOptionBLoading(false);
     setError(null);
   };
 
@@ -362,7 +414,7 @@ export default function App() {
                     Generando otra tanda con IA para {config.destination || "tu viaje"}… ✨
                   </p>
                   <p className="mt-2 text-xs text-[#240046]/60 dark:text-white/50">
-                    Puede tardar hasta 1 minuto
+                    Primero el Principal; Opción B llega al momento
                   </p>
                 </div>
               </div>
@@ -375,6 +427,7 @@ export default function App() {
               updatingExisting={!!updatingSavedId}
               proposalSource={proposalSource}
               isRegenerating={isLoading}
+              optionBLoading={optionBLoading}
               onRegenerate={() => generateItinerary({ regenerate: true })}
               resetAll={startNewBitacora}
               onSaveItinerary={handleSaveItinerary}
@@ -394,7 +447,10 @@ export default function App() {
                   <p className="font-display font-extralight text-2xl sm:text-3xl text-[#240046] dark:text-[#e2e8f0] tracking-tight leading-snug">
                     {updatingSavedId
                       ? `Actualizando bitácora para ${config.destination || "tu viaje"}…`
-                      : `Armando 2 planes para ${config.destination || "tu viaje"}… ✨`}
+                      : `Armando tu plan Principal para ${config.destination || "tu viaje"}… ✨`}
+                  </p>
+                  <p className="mt-3 text-xs text-[#240046]/55 dark:text-white/45">
+                    Opción B se prepara enseguida en segundo plano
                   </p>
                 </div>
               </div>

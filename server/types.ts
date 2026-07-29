@@ -16,6 +16,12 @@ export interface TravelConfigInput {
   lodging?: string;
   /** Skip server cache and ask the model for a fresh take. */
   regenerate?: boolean;
+  /**
+   * Progressive generation:
+   * - `principal` (default): enrich + Principal only
+   * - `optionB`: Opción B (requires `principal` in body)
+   */
+  stage?: "principal" | "optionB";
 }
 
 export interface PlaceSpot {
@@ -45,7 +51,8 @@ export interface WeatherDaySummary {
 
 export interface EnrichmentContext {
   places: PlaceSpot[];
-  weather: WeatherDaySummary[];
+  /** @deprecated Weather enrichment removed from hot path; kept optional for compat. */
+  weather?: WeatherDaySummary[];
   lat?: number;
   lng?: number;
   formattedAddress?: string;

@@ -97,7 +97,7 @@ function buildOsmQueries(interests: string[] = []): OsmQuery[] {
     { spotType: "poi", filter: nw(`["tourism"="gallery"]`) }
   );
 
-  return [...base, ...extras].slice(0, 8);
+  return [...base, ...extras].slice(0, 5);
 }
 
 function elementToSpot(
@@ -146,28 +146,27 @@ function elementToSpot(
   };
 }
 
+async function queryOverpassEndpoint(endpoint: string, query: string): Promise<any[]> {
+  const res = await fetchWithTimeout(endpoint, {
+    method: "POST",
+    timeoutMs: 8_000,
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      "User-Agent": NOMINATIM_UA,
+    },
+    body: `data=${encodeURIComponent(query)}`,
+  });
+  if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data?.elements) ? data.elements : [];
+}
+
+/** Race Overpass mirrors; first success wins (hard ~8s budget). */
 async function queryOverpass(query: string): Promise<any[]> {
-  let lastErr: Error | null = null;
-  for (const endpoint of OVERPASS_URLS) {
-    try {
-      const res = await fetchWithTimeout(endpoint, {
-        method: "POST",
-        timeoutMs: 20_000,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-          "User-Agent": NOMINATIM_UA,
-        },
-        body: `data=${encodeURIComponent(query)}`,
-      });
-      if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-      const data = await res.json();
-      return Array.isArray(data?.elements) ? data.elements : [];
-    } catch (err: any) {
-      lastErr = err instanceof Error ? err : new Error(String(err));
-    }
-  }
-  throw lastErr || new Error("Overpass falló");
+  return Promise.any(
+    OVERPASS_URLS.map((endpoint) => queryOverpassEndpoint(endpoint, query))
+  );
 }
 
 /**
@@ -193,14 +192,19 @@ export async function enrichPlacesFromOsm(
       .join("\n  ");
 
     const overpassQl = `
-[out:json][timeout:25];
+[out:json][timeout:8];
 (
   ${filters}
 );
 out center;
 `.trim();
 
-    const elements = await queryOverpass(overpassQl);
+    let elements: any[] = [];
+    try {
+      elements = await queryOverpass(overpassQl);
+    } catch (err: any) {
+      warnings.push(`Overpass lento/timeout: ${err?.message || err}. Seguimos con coords de ciudad.`);
+    }
     const places: PlaceSpot[] = [];
     const seen = new Set<string>();
 
