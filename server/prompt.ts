@@ -69,7 +69,17 @@ ${placesBlock}
 ${warnings ? `\n${warnings}\n` : ""}`;
 }
 
-function sharedRulesBlock(days: number, energy: number, opts?: { regenerate?: boolean }): string {
+function sharedRulesBlock(
+  days: number,
+  energy: number,
+  opts?: { regenerate?: boolean; itineraryDays?: number; dayFrom?: number; dayTo?: number }
+): string {
+  const itineraryDays = opts?.itineraryDays ?? days;
+  const dayRange =
+    opts?.dayFrom != null && opts?.dayTo != null
+      ? `itinerary debe cubrir solo días ${opts.dayFrom}..${opts.dayTo} (day = ${opts.dayFrom}..${opts.dayTo}).`
+      : `itinerary.length debe ser ${itineraryDays} (un día por entrada, day = 1..${itineraryDays}).`;
+
   return `REGLAS GEO Y HORARIOS (críticas para utilidad):
 G1. Agrupa cada día por ZONA/barrio. No saltes de un extremo de la ciudad a otro y vuelvas al primero.
 G2. Entre actividades consecutivas del mismo día: preferir cercanía (usa coords del listado). Máximo UN traslado largo por día, y solo al inicio o entre bloque mañana/tarde.
@@ -80,46 +90,32 @@ G6. En "title" de actividades usa el nombre del lugar del listado cuando lo uses
 
 REGLAS JSON:
 1. Devuelve SOLO JSON válido (sin markdown, sin backticks, sin texto extra).
-2. itinerary.length debe ser ${days} (un día por entrada, day = 1..${days}).
-3. Cada día: 2–4 actividades coherentes con la energía ${energy}/100.
-4. "desc" = 1 frase corta (máx. 100 caracteres).
+2. ${dayRange}
+3. Cada día: 2–3 actividades coherentes con la energía ${energy}/100.
+4. "desc" = 1 frase corta (máx. 80 caracteres).
 5. "category" OBLIGATORIO en CADA actividad: string en inglés minúsculas, exactamente UNA de: ${ACTIVITY_CATEGORY_PROMPT_LIST}.
-   - NO uses español ("Explorar", "Comida", "Naturaleza"). Solo el id: "explore", "food", "nature", etc.
-   - NO uses el mismo "explore" en todas: varía según la actividad real.
-   - Café/cowork con laptop o trabajo remoto → "work" (no "cafe").
-   - Café sin foco trabajo → "cafe". Restaurante/comida → "food".
-   - Parque/sendero/mirador → "nature". Playa/costa → "beach".
-   - Museo/galería/patrimonio → "culture". Paseo/barrio sin foco claro → "explore".
-   - Bar/fiesta → "nightlife". Spa/yoga → "wellness".
-   - Bus/vuelo/taxi largo → "transit". Check-in hotel/hostel → "stay".
-   - Compras → "shopping". Deporte extremo/trek exigente → "adventure".
-   - Prohibido omitir category. Prohibido isCoworkingFriendly.
-6. tip y reservation: por defecto NO existen. Por cada día: MÁXIMO 2 tips y MÁXIMO 2 reservations.
-   - tip: OMITIR salvo info crítica. Si dudas: OMITIR.
-   - reservation: OMITIR salvo reserva OBLIGATORIA. Nunca escribas "sin reserva".
-7. practicalTips (4–6): wifi/conectividad, hospedaje, transporte — tono de tip de amigo. OBLIGATORIO: cada nombre de lugar/hostal/barrio/café debe ir como markdown [Nombre](https://www.google.com/maps/search/?api=1&query=...) — SOLO Google Maps. Incluye al menos 3 tips con enlaces.
-8. shortDescription y títulos de día: 1 frase oral, concreta; Spanglish ligero OK. Sin emojis en el JSON.
-9. mapsUrl de cafés/actividades: SOLO Google Maps (search o place). Reutiliza mapsUrl del listado si ya es google.com/maps.
-${opts?.regenerate ? `\n10. NUEVA TANDA (id ${Date.now()}): propón barrios, orden del día y actividades DISTINTAS a un plan genérico anterior. Mantén el perfil del usuario pero sorprende con otro ángulo creativo.` : ""}`;
+   - Café/cowork con laptop → "work". Café sin foco trabajo → "cafe". Comida → "food". Parque → "nature". Playa → "beach". Museo → "culture". Barrio → "explore". Bar → "nightlife". Spa → "wellness". Traslado largo → "transit". Hotel → "stay". Compras → "shopping". Trek → "adventure".
+   - Prohibido omitir category. Prohibido isCoworkingFriendly. No pongas "explore" en todas.
+6. tip y reservation: OMITIR por defecto. Máx. 1 tip y 1 reservation por día, solo si es crítico/obligatorio.
+7. practicalTips: ver instrucción de la tarea (si aplica). Links Maps solo Google.
+8. shortDescription y títulos de día: 1 frase oral, concreta; Spanglish ligero OK. Sin emojis.
+9. mapsUrl: SOLO Google Maps. Reutiliza del listado si existe.
+${opts?.regenerate ? `\n10. NUEVA TANDA (id ${Date.now()}): otro ángulo creativo, distinto a un plan genérico.` : ""}`;
 }
+
+const ACTIVITY_SHAPE = `{ "time": string, "title": string, "desc": string (máx. 80 chars), "category": "${ACTIVITY_CATEGORY_PROMPT_LIST}", "mapsUrl": string|opcional, "tip": string|omitir, "reservation": string|omitir }`;
+
+const DAY_SHAPE = `{ "day": number, "title": string, "activities": [ ${ACTIVITY_SHAPE}, ... ] }`;
 
 const PROPOSAL_SHAPE = `{
   "proposalType": string,
   "destinationTitle": string (solo ciudad/destino corto, sin slogan),
   "shortDescription": string,
-  "practicalTips": string[4-6],
+  "practicalTips": string[],
   "recommendedCafesAndCoworks": [
     { "name": string, "type": "cafe"|"coworking", "rating": string, "notes": string, "mapsUrl": string|opcional, "lat": number|opcional, "lng": number|opcional }
   ],
-  "itinerary": [
-    {
-      "day": number,
-      "title": string,
-      "activities": [
-        { "time": string, "title": string, "desc": string (máx. 120 chars), "category": "${ACTIVITY_CATEGORY_PROMPT_LIST}", "mapsUrl": string|opcional, "tip": string|omitir, "reservation": string|omitir }
-      ]
-    }
-  ]
+  "itinerary": [ ${DAY_SHAPE}, ... ]
 }`;
 
 function prepContext(config: TravelConfigInput) {
@@ -132,21 +128,104 @@ function prepContext(config: TravelConfigInput) {
   return { days, energy, interests };
 }
 
-/** Progressive stage 1: only Principal (faster first paint). */
+const INTRO = `Eres un amigo nómada que arma planes de viaje cercanos y útiles. Responde SIEMPRE en español con Spanglish natural (wifi, cowork, tip, day-pass, mood) cuando suene auténtico. Tono oral, corto, sin jerga SaaS ni brochure.
+Nunca hables mal de un destino; si algo no conviene, reformúlalo como recomendación ("si buscas X, mejor…").
+
+IMPORTANTE: No edites archivos, no uses herramientas del repositorio ni del sistema. Tu única salida debe ser JSON.`;
+
+/** Progressive: meta + Día 1 only (fast first paint). */
+export function buildShellPrompt(
+  config: TravelConfigInput,
+  enrichment?: EnrichmentContext,
+  opts?: { regenerate?: boolean }
+): string {
+  const { days, energy, interests } = prepContext(config);
+  return `${INTRO}
+
+TAREA: Genera el SHELL de la propuesta Principal: info básica + SOLO el Día 1.
+El viaje dura ${days} días en total, pero en este JSON itinerary.length debe ser 1 (solo day: 1).
+Respeta llegada del día 1, presupuesto, intereses, energía y hospedaje si hay.
+
+${sharedProfileBlock(config, enrichment, days, energy, interests)}
+
+${sharedRulesBlock(days, energy, { ...opts, itineraryDays: 1, dayFrom: 1, dayTo: 1 })}
+
+FORMA DEL JSON:
+{
+  "proposals": [
+    {
+      "proposalType": "Principal",
+      "destinationTitle": string,
+      "shortDescription": string (1 frase),
+      "practicalTips": string[3] (máx. 2 con link Google Maps markdown),
+      "recommendedCafesAndCoworks": [ ... máx. 3 ... ],
+      "itinerary": [ { "day": 1, "title": string, "activities": [2-3 acts] } ]
+    }
+  ]
+}
+Exactamente 1 propuesta "Principal". itinerary SOLO día 1.
+
+Genera ahora el JSON.`;
+}
+
+/** Progressive: days 2..N given shell (day 1 already done). */
+export function buildRemainingDaysPrompt(
+  config: TravelConfigInput,
+  enrichment: EnrichmentContext | undefined,
+  shell: GeneratedItinerary,
+  opts?: { regenerate?: boolean }
+): string {
+  const { days, energy, interests } = prepContext(config);
+  const day1 = (shell.itinerary || []).find((d) => d.day === 1) || shell.itinerary?.[0];
+  const day1Acts = (day1?.activities || []).map((a) => a.title).join(", ");
+  const cafes = (shell.recommendedCafesAndCoworks || [])
+    .map((c) => c.name)
+    .slice(0, 4)
+    .join(", ");
+
+  return `${INTRO}
+
+TAREA: Completa la propuesta Principal generando SOLO los días 2..${days} (no regeneres el día 1).
+Mantén coherencia con el shell: mismas vibes, sin repetir las mismas actividades del día 1, varía zonas cuando tenga sentido.
+
+SHELL YA GENERADO:
+- shortDescription: ${shell.shortDescription || "(n/d)"}
+- Cafés/cowork: ${cafes || "(n/d)"}
+- Día 1 (${day1?.title || "n/d"}): ${day1Acts || "(sin acts)"}
+
+${sharedProfileBlock(config, enrichment, days, energy, interests)}
+
+${sharedRulesBlock(days, energy, {
+    ...opts,
+    itineraryDays: Math.max(0, days - 1),
+    dayFrom: 2,
+    dayTo: days,
+  })}
+
+FORMA DEL JSON:
+{
+  "days": [
+    ${DAY_SHAPE},
+    ...
+  ]
+}
+Exactamente ${Math.max(0, days - 1)} entradas en "days", con day = 2..${days} en orden.
+NO incluyas day 1. NO envolvas en "proposals".
+
+Genera ahora el JSON.`;
+}
+
+/** Progressive stage: full Principal (compat / single-shot). */
 export function buildPrincipalPrompt(
   config: TravelConfigInput,
   enrichment?: EnrichmentContext,
   opts?: { regenerate?: boolean }
 ): string {
   const { days, energy, interests } = prepContext(config);
-  return `Eres un amigo nómada que arma planes de viaje cercanos y útiles. Responde SIEMPRE en español con Spanglish natural (wifi, cowork, tip, day-pass, mood) cuando suene auténtico. Tono oral, corto, sin jerga SaaS ni brochure.
-Nunca hables mal de un destino; si algo no conviene, reformúlalo como recomendación ("si buscas X, mejor…").
+  return `${INTRO}
 
-IMPORTANTE: No edites archivos, no uses herramientas del repositorio ni del sistema. Tu única salida debe ser JSON.
-
-TAREA: Genera EXACTAMENTE 1 itinerario — la propuesta Principal — a partir del perfil completo del usuario.
-NO uses arquetipos fijos tipo "Aventura / Deep Focus / Wellness" como título.
-Debe respetar destino, presupuesto, intereses, energía, fechas y hospedaje si hay. Sea geográficamente realista y útil.
+TAREA: Genera EXACTAMENTE 1 itinerario — la propuesta Principal — completa (${days} días).
+NO uses arquetipos fijos. Geográficamente realista y útil.
 
 ${sharedProfileBlock(config, enrichment, days, energy, interests)}
 
@@ -161,14 +240,15 @@ FORMA DEL JSON:
     }
   ]
 }
-Shape de cada propuesta:
+Shape:
 ${PROPOSAL_SHAPE}
-Exactamente 1 elemento en "proposals" con proposalType "Principal".
+practicalTips: 3–4 (máx. 2 con link Maps). recommendedCafesAndCoworks: máx. 3.
+Exactamente 1 elemento "Principal".
 
 Genera ahora el JSON.`;
 }
 
-/** Progressive stage 2: Opción B distinct from Principal. */
+/** Progressive: Opción B distinct from Principal. */
 export function buildOptionBPrompt(
   config: TravelConfigInput,
   enrichment: EnrichmentContext | undefined,
@@ -184,15 +264,12 @@ export function buildOptionBPrompt(
     .slice(0, 6)
     .join(", ");
 
-  return `Eres un amigo nómada que arma planes de viaje cercanos y útiles. Responde SIEMPRE en español con Spanglish natural. Tono oral, corto.
-Nunca hables mal de un destino; si algo no conviene, reformúlalo como recomendación.
+  return `${INTRO}
 
-IMPORTANTE: No edites archivos, no uses herramientas. Tu única salida debe ser JSON.
+TAREA: Genera EXACTAMENTE 1 itinerario — Opción B — completa (${days} días) para el MISMO perfil.
+CLARAMENTE distinta de la Principal (otros barrios/zonas, otro orden), sin clonar.
 
-TAREA: Genera EXACTAMENTE 1 itinerario — Opción B — para el MISMO perfil del usuario.
-Debe ser CLARAMENTE distinta de la Principal (otros barrios/zonas, otro orden del día, otro mix), sin clonar títulos ni el mismo recorrido.
-
-PRINCIPAL YA GENERADA (NO la copies; diferénciate):
+PRINCIPAL YA GENERADA (NO la copies):
 - shortDescription: ${principal.shortDescription || "(n/d)"}
 - Cafés/cowork: ${principalCafes || "(n/d)"}
 - Días:
@@ -211,31 +288,36 @@ FORMA DEL JSON:
     }
   ]
 }
-Shape de cada propuesta:
+Shape:
 ${PROPOSAL_SHAPE}
-Exactamente 1 elemento en "proposals" con proposalType "Opción B".
+practicalTips: 3–4. recommendedCafesAndCoworks: máx. 3.
+Exactamente 1 elemento "Opción B".
 
 Genera ahora el JSON.`;
 }
 
-/** @deprecated Prefer buildPrincipalPrompt / buildOptionBPrompt. Kept for repair of both. */
+/** @deprecated Prefer buildShellPrompt / buildRemainingDaysPrompt / buildOptionBPrompt. */
 export function buildProposalsPrompt(
   config: TravelConfigInput,
   enrichment?: EnrichmentContext,
   opts?: { regenerate?: boolean }
 ): string {
-  return buildPrincipalPrompt(config, enrichment, opts);
+  return buildShellPrompt(config, enrichment, opts);
 }
 
 export function buildRepairPrompt(
   invalidText: string,
   errorMessage: string,
-  expectedType: "Principal" | "Opción B" | "both" = "both"
+  expectedType: "Principal" | "Opción B" | "both" | "days" = "both"
 ): string {
-  const count =
-    expectedType === "both"
-      ? "exactamente 2 propuestas (Principal y Opción B)"
-      : `exactamente 1 propuesta con proposalType "${expectedType}"`;
+  let count: string;
+  if (expectedType === "both") {
+    count = "exactamente 2 propuestas (Principal y Opción B)";
+  } else if (expectedType === "days") {
+    count = 'un objeto { "days": [ ... ] } con los días pedidos';
+  } else {
+    count = `exactamente 1 propuesta con proposalType "${expectedType}"`;
+  }
   return `Tu respuesta anterior no era JSON válido o no cumplía el schema.
 
 Error: ${errorMessage}

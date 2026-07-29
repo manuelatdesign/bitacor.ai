@@ -51,8 +51,8 @@ logs/                     ← resúmenes comprimidos de sesiones
 - **Producto:** itinerarios híbridos (trabajo + exploración) + diario fotográfico en viaje.
 - **IA:** Cursor SDK (`Agent.prompt`), no Gemini. Key: `CURSOR_API_KEY`. Modelo: `CURSOR_MODEL` (default `composer-2.5`).
 - **Tokens:** presupuesto server-side menor al 100% del plan Cursor diario (`CURSOR_PLAN_DAILY_TOKEN_LIMIT` × `CURSOR_APP_BUDGET_RATIO`, default 0.4). Ver `contexto/token-budget.md`.
-- **Output IA:** exactamente **2** propuestas: `Principal` + `Opción B` (progresivo: Principal primero, Opción B en segundo plano).
-- **Post-generación:** abrir directo Principal; switch a Opción B dentro de `ResultView` (sin pantalla de comparación).
+- **Output IA:** exactamente **2** propuestas: `Principal` + `Opción B` (progresivo: shell Día 1 → resto de días → Opción B).
+- **Post-generación:** abrir directo Principal (Día 1); días siguientes y Opción B en segundo plano.
 - **Enrichment soft-fail:** OSM/Places pueden fallar; la generación continúa. Sin weather en hot path.
 - **Validación:** JSON del agente se parsea + valida en servidor (`server/validate.ts`); retry con repair prompt si falla.
 - **Persistencia cliente:** itinerarios en `localStorage` (`bitacor_saved_itineraries`); fotos en IndexedDB (`bitacor_trip`).
@@ -66,8 +66,8 @@ logs/                     ← resúmenes comprimidos de sesiones
 
 ```
 Cliente (src/)                Servidor (server.ts + server/)
-WizardView → App.tsx          POST /api/generate-proposals (stage principal → optionB)
- → ResultView                  OSM → Cursor Principal → UI → Cursor Opción B
+WizardView → App.tsx          POST /api/generate-proposals (shell → days → optionB)
+ → ResultView                  OSM → Cursor shell Día1 → días → Opción B
 TripView (Google Maps+camera) POST /api/destination-categories
 FriendsFeedView (demo)        GET  /api/places/autocomplete
 SavedItinerariesView

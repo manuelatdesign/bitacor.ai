@@ -62,6 +62,10 @@ interface ResultViewProps {
   proposalSource?: ProposalSource;
   onRegenerate?: () => void;
   isRegenerating?: boolean;
+  /** Progressive: remaining days still generating after shell (day 1) */
+  daysLoading?: boolean;
+  /** Total days expected from wizard (for pending day chips) */
+  expectedDays?: number;
   /** Progressive: Opción B still generating while Principal is shown */
   optionBLoading?: boolean;
 }
@@ -130,6 +134,8 @@ export default function ResultView({
   proposalSource = null,
   onRegenerate,
   isRegenerating = false,
+  daysLoading = false,
+  expectedDays,
   optionBLoading = false,
 }: ResultViewProps) {
   const isSavedMode = mode === "saved";
@@ -190,6 +196,24 @@ export default function ResultView({
       config.destination || selectedProposal.destinationTitle
     );
   }, [selectedProposal, config.destination]);
+
+  const totalDaySlots = Math.max(
+    expectedDays || 0,
+    selectedProposal?.itinerary?.length || 0,
+    1
+  );
+
+  const daySlots = useMemo(() => {
+    const byDay = new Map(
+      (selectedProposal?.itinerary || []).map((d) => [d.day, d] as const)
+    );
+    return Array.from({ length: totalDaySlots }, (_, i) => {
+      const dayNum = i + 1;
+      const data = byDay.get(dayNum) || (selectedProposal?.itinerary || [])[i];
+      const ready = !!(data && (data.activities?.length || 0) > 0);
+      return { dayNum, data: ready ? data : undefined, ready, pending: !ready && daysLoading };
+    });
+  }, [selectedProposal?.itinerary, totalDaySlots, daysLoading]);
 
   const [isDarkMode, setIsDarkMode] = useState(
     () => typeof document !== "undefined" && document.documentElement.classList.contains("dark")
@@ -427,8 +451,16 @@ export default function ResultView({
                 {isSavedMode ? "Guardado" : selectedProposal.proposalType}
               </span>
               <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-medium tracking-[0.08em] uppercase bg-emerald-500/10 dark:bg-emerald-400/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/20 dark:border-emerald-400/30">
-                {selectedProposal.itinerary.length} días
+                {daysLoading
+                  ? `Día 1 listo · ${totalDaySlots} días`
+                  : `${selectedProposal.itinerary.length} días`}
               </span>
+              {daysLoading && !isSavedMode && (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-medium tracking-[0.08em] uppercase bg-sky-500/10 text-sky-900 dark:text-sky-200 border border-sky-500/20 inline-flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Completando días…
+                </span>
+              )}
               {!isSavedMode && proposalSource === "ai" && (
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-medium tracking-[0.08em] uppercase bg-violet-500/10 text-violet-800 dark:text-violet-200 border border-violet-500/20">
                   IA
@@ -708,23 +740,32 @@ export default function ResultView({
           {activeResultTab === "itinerary" && (
             <div className="bg-white/15 backdrop-blur-[24px] border border-white/30 rounded-[2rem] p-6 shadow-sm flex flex-col gap-4">
               <span className="font-mono text-[9px] tracking-[0.1em] text-[#240046]/60 dark:text-white/45 uppercase font-bold">
-                Días ({selectedProposal.itinerary.length})
+                Días ({totalDaySlots}
+                {daysLoading ? " · cargando" : ""})
               </span>
               
               <div className="grid grid-cols-5 gap-2">
-                {selectedProposal.itinerary.map((day, idx) => {
+                {daySlots.map((slot, idx) => {
                   const isActive = selectedDayIdx === idx;
                   return (
                     <button
-                      key={day.day}
+                      key={slot.dayNum}
+                      type="button"
                       onClick={() => setSelectedDayIdx(idx)}
+                      disabled={slot.pending}
                       className={`h-11 rounded-xl text-xs font-mono font-bold border transition-all ${
                         isActive
-                          ? "bg-[#240046] border-[#240046] text-white shadow-md"
-                          : "bg-white/20 border-white/30 text-[#240046] hover:bg-white/40"
+                          ? "bg-[#240046] border-[#240046] text-white shadow-md dark:bg-[#ed93af] dark:text-[#240046]"
+                          : slot.pending
+                            ? "bg-white/10 border-dashed border-[#240046]/20 text-[#240046]/35 dark:text-white/30 cursor-wait"
+                            : "bg-white/20 border-white/30 text-[#240046] hover:bg-white/40 dark:text-white/70"
                       }`}
                     >
-                      D{day.day}
+                      {slot.pending ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto opacity-60" />
+                      ) : (
+                        `D${slot.dayNum}`
+                      )}
                     </button>
                   );
                 })}
@@ -748,22 +789,29 @@ export default function ResultView({
                     Tu day-by-day
                   </span>
                   <h2 className="font-display font-light text-2xl text-[#240046] dark:text-[#e2e8f0] tracking-tight">
-                    Día {selectedProposal.itinerary[selectedDayIdx]?.day}: {selectedProposal.itinerary[selectedDayIdx]?.title}
+                    {daySlots[selectedDayIdx]?.pending
+                      ? `Día ${daySlots[selectedDayIdx]?.dayNum}: armando…`
+                      : `Día ${daySlots[selectedDayIdx]?.data?.day ?? daySlots[selectedDayIdx]?.dayNum}: ${daySlots[selectedDayIdx]?.data?.title || "…"}`}
                   </h2>
                 </div>
 
                 {/* Day Paging Pills */}
                 <div className="flex gap-1.5 shrink-0">
                   <button
+                    type="button"
                     disabled={selectedDayIdx === 0}
-                    onClick={() => setSelectedDayIdx(prev => prev - 1)}
+                    onClick={() => setSelectedDayIdx((prev) => prev - 1)}
                     className="p-2.5 rounded-xl border border-white/40 bg-white/20 hover:bg-white/40 disabled:opacity-20 transition-all cursor-pointer"
                   >
                     ←
                   </button>
                   <button
-                    disabled={selectedDayIdx === selectedProposal.itinerary.length - 1}
-                    onClick={() => setSelectedDayIdx(prev => prev + 1)}
+                    type="button"
+                    disabled={
+                      selectedDayIdx >= totalDaySlots - 1 ||
+                      !!daySlots[selectedDayIdx + 1]?.pending
+                    }
+                    onClick={() => setSelectedDayIdx((prev) => prev + 1)}
                     className="p-2.5 rounded-xl border border-white/40 bg-white/20 hover:bg-white/40 disabled:opacity-20 transition-all cursor-pointer"
                   >
                     →
@@ -771,9 +819,23 @@ export default function ResultView({
                 </div>
               </div>
 
+              {/* Pending day placeholder */}
+              {daySlots[selectedDayIdx]?.pending && (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <RefreshCw className="w-6 h-6 animate-spin text-[#240046]/40 dark:text-white/40" />
+                  <p className="font-display font-light text-lg text-[#240046]/70 dark:text-white/60">
+                    Generando el día {daySlots[selectedDayIdx]?.dayNum}…
+                  </p>
+                  <p className="text-xs text-[#240046]/45 dark:text-white/40">
+                    El Día 1 ya está listo arriba en los chips
+                  </p>
+                </div>
+              )}
+
               {/* Day Activities List */}
               <div className="flex flex-col gap-3">
-                {selectedProposal.itinerary[selectedDayIdx]?.activities?.map((act, actIdx) => {
+                {!daySlots[selectedDayIdx]?.pending &&
+                  (daySlots[selectedDayIdx]?.data?.activities || selectedProposal.itinerary[selectedDayIdx]?.activities)?.map((act, actIdx) => {
                   const isEditingThis = editingActivityIdx?.dayIdx === selectedDayIdx && editingActivityIdx?.actIdx === actIdx;
                   const tip = meaningfulTip(act.tip);
                   const reservation = needsReservation(act.reservation);

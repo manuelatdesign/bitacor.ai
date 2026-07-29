@@ -4,7 +4,9 @@ import { buildGeoRepairPrompt, checkItineraryGeography } from "./geoCheck";
 import {
   buildOptionBPrompt,
   buildPrincipalPrompt,
+  buildRemainingDaysPrompt,
   buildRepairPrompt,
+  buildShellPrompt,
 } from "./prompt";
 import { agentPromptRuntime } from "./cursorRuntime";
 import {
@@ -16,16 +18,25 @@ import type {
   DestinationCategory,
   EnrichmentContext,
   GeneratedItinerary,
+  ItineraryDay,
   TravelConfigInput,
 } from "./types";
 import {
   extractJsonObject,
+  mergeShellWithDays,
   validateCategoriesPayload,
+  validateRemainingDaysPayload,
+  validateShellProposalPayload,
   validateSingleProposalPayload,
 } from "./validate";
 
 export interface GenerateSingleResult {
   proposal: GeneratedItinerary;
+  geoWarnings: string[];
+}
+
+export interface GenerateDaysResult {
+  days: ItineraryDay[];
   geoWarnings: string[];
 }
 
@@ -81,6 +92,11 @@ async function parseSingle(
   return validateSingleProposalPayload(parsed, expectedType);
 }
 
+async function parseShell(text: string): Promise<GeneratedItinerary> {
+  const parsed = extractJsonObject(text);
+  return validateShellProposalPayload(parsed);
+}
+
 async function withGeoCheck(
   proposal: GeneratedItinerary,
   enrichment: EnrichmentContext | undefined,
@@ -118,13 +134,14 @@ async function generateOne(
   prompt: string,
   runName: string,
   repairName: string,
-  enrichment?: EnrichmentContext
+  enrichment?: EnrichmentContext,
+  parseFn: (text: string) => Promise<GeneratedItinerary> = (t) => parseSingle(t, expectedType)
 ): Promise<GenerateSingleResult> {
   let text = await runAgentPrompt(prompt, runName);
   let proposal: GeneratedItinerary;
 
   try {
-    proposal = await parseSingle(text, expectedType);
+    proposal = await parseFn(text);
   } catch (firstErr: any) {
     console.warn(
       `[cursorAgent] JSON inválido (${expectedType}), reintentando:`,
@@ -134,10 +151,58 @@ async function generateOne(
       buildRepairPrompt(text, firstErr?.message || "JSON inválido", expectedType),
       repairName
     );
-    proposal = await parseSingle(text, expectedType);
+    proposal = await parseFn(text);
   }
 
   return withGeoCheck(proposal, enrichment, expectedType);
+}
+
+/** Fast first paint: Principal meta + day 1 only. */
+export async function generateShellWithCursor(
+  config: TravelConfigInput,
+  enrichment?: EnrichmentContext,
+  opts?: { regenerate?: boolean }
+): Promise<GenerateSingleResult> {
+  const prompt = buildShellPrompt(config, enrichment, opts);
+  return generateOne(
+    "Principal",
+    prompt,
+    "bitacor-itinerary-shell",
+    "bitacor-itinerary-shell-repair",
+    enrichment,
+    parseShell
+  );
+}
+
+/** Complete Principal days 2..N given shell. */
+export async function generateRemainingDaysWithCursor(
+  config: TravelConfigInput,
+  enrichment: EnrichmentContext | undefined,
+  shell: GeneratedItinerary,
+  opts?: { regenerate?: boolean }
+): Promise<{ proposal: GeneratedItinerary; geoWarnings: string[] }> {
+  const totalDays = config.days && config.days > 0 ? config.days : 3;
+  if (totalDays <= 1) {
+    return { proposal: { ...shell, proposalType: "Principal" }, geoWarnings: [] };
+  }
+
+  const prompt = buildRemainingDaysPrompt(config, enrichment, shell, opts);
+  let text = await runAgentPrompt(prompt, "bitacor-itinerary-days");
+  let days: ItineraryDay[];
+
+  try {
+    days = validateRemainingDaysPayload(extractJsonObject(text), 2, totalDays);
+  } catch (firstErr: any) {
+    console.warn("[cursorAgent] días JSON inválido, reintentando:", firstErr?.message);
+    text = await runAgentPrompt(
+      buildRepairPrompt(text, firstErr?.message || "JSON inválido", "days"),
+      "bitacor-itinerary-days-repair"
+    );
+    days = validateRemainingDaysPayload(extractJsonObject(text), 2, totalDays);
+  }
+
+  const proposal = mergeShellWithDays(shell, days, totalDays);
+  return withGeoCheck(proposal, enrichment, "Principal");
 }
 
 export async function generatePrincipalWithCursor(
@@ -171,17 +236,23 @@ export async function generateOptionBWithCursor(
   );
 }
 
-/** @deprecated Prefer generatePrincipalWithCursor + generateOptionBWithCursor. */
+/** @deprecated Prefer shell → days → optionB. */
 export async function generateProposalsWithCursor(
   config: TravelConfigInput,
   enrichment?: EnrichmentContext,
   opts?: { regenerate?: boolean }
 ): Promise<{ proposals: GeneratedItinerary[]; geoWarnings: string[] }> {
-  const a = await generatePrincipalWithCursor(config, enrichment, opts);
-  const b = await generateOptionBWithCursor(config, enrichment, a.proposal, opts);
+  const shell = await generateShellWithCursor(config, enrichment, opts);
+  const full = await generateRemainingDaysWithCursor(
+    config,
+    enrichment,
+    shell.proposal,
+    opts
+  );
+  const b = await generateOptionBWithCursor(config, enrichment, full.proposal, opts);
   return {
-    proposals: [a.proposal, b.proposal],
-    geoWarnings: [...a.geoWarnings, ...b.geoWarnings],
+    proposals: [full.proposal, b.proposal],
+    geoWarnings: [...shell.geoWarnings, ...full.geoWarnings, ...b.geoWarnings],
   };
 }
 

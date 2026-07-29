@@ -4,7 +4,7 @@
 - [x] Wizard multi-step (destino, fechas, presupuesto, intereses, energía, lodging)
 - [x] Autocomplete destino (Places opcional)
 - [x] Categorías de intereses por destino vía Cursor SDK + cache
-- [x] Generación progresiva: Principal primero + Opción B en background (sin weather; Overpass acotado)
+- [x] Generación progresiva: shell (Día 1) → resto de días → Opción B (sin weather; Overpass acotado)
 - [x] ResultView: Principal/Opción B, draft vs saved, regenerar/eliminar
 - [x] Guardados: página cards + localStorage
 - [x] TripView: Google Maps, captura cámara/galería, EXIF geo, IndexedDB, demo photos, resumen fullscreen

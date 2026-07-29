@@ -7,7 +7,7 @@
 ## APIs
 | Método | Path | Rol |
 |--------|------|-----|
-| POST | `/api/generate-proposals` | OSM → Cursor progresivo (`stage: principal` \| `optionB`) + tips |
+| POST | `/api/generate-proposals` | OSM → stages `shell`→`days`→`optionB` |
 | POST | `/api/destination-categories` | Categorías de intereses IA por destino (cache) |
 | GET | `/api/places/autocomplete?q=` | Autocomplete ciudades (Places o vacío) |
 
@@ -19,9 +19,10 @@ Token budget: `server/tokenBudget.ts` — gate antes de cada `Agent.prompt` (ver
 1. Validar `TravelConfigInput` (destino required; incluye `lodging` opcional).
 2. Cache hit (par completo) → return ambas propuestas.
 3. Enrichment OSM (Nominatim + Overpass race ~8s); sin weather; Google Nearby off en hot path. Cache enrichment 30 min.
-4. `stage=principal` → `generatePrincipalWithCursor` → validate/repair → geo-check (geo-repair off).
-5. Cliente muestra Principal; `stage=optionB` + `principal` → `generateOptionBWithCursor` → cache par completo.
-6. Deep-links Maps + tipLines vuelos/hoteles + tips de ruta si aplica.
+4. `stage=shell` → meta + Día 1 → UI.
+5. `stage=days` + shell → días 2..N → Principal completo.
+6. `stage=optionB` + principal → Opción B → cache par.
+7. Deep-links Maps + tipLines vuelos/hoteles + tips de ruta si aplica.
 
 Cliente fallback mock: `generateMockProposals` en `src/data.ts` si 503/429/error (no cargar data.ts entero salvo tocar mocks).
 

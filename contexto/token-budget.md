@@ -20,7 +20,7 @@ Estado: `.data/token-budget.json` (gitignored), reset por día calendario local.
 | Acción | Calls típicas |
 |--------|----------------|
 | Categorías IA (destino sin catálogo / forzar IA) | 1 (+1 repair JSON) |
-| Generar itinerarios | 2 (+ repair JSON por etapa): Principal luego Opción B |
+| Generar itinerarios | ~3 calls (+ repair): shell → days → optionB |
 | Geo repair | 0 por default (`CURSOR_DISABLE_GEO_REPAIR=true`) |
 
 ## Cuándo NO se gasta

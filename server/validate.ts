@@ -216,6 +216,91 @@ export function validateSingleProposalPayload(
   return proposal;
 }
 
+/** Progressive shell: Principal with at least day 1. */
+export function validateShellProposalPayload(raw: unknown): GeneratedItinerary {
+  const proposal = validateSingleProposalPayload(raw, "Principal");
+  if (!proposal.itinerary.some((d) => d.day === 1) && proposal.itinerary.length > 0) {
+    proposal.itinerary[0].day = 1;
+  }
+  // Keep only day 1 for shell stage (model sometimes over-generates)
+  const day1 = proposal.itinerary.find((d) => d.day === 1) || proposal.itinerary[0];
+  if (!day1) {
+    throw new Error("Shell inválido: falta el día 1.");
+  }
+  day1.day = 1;
+  proposal.itinerary = [day1];
+  proposal.recommendedCafesAndCoworks = (proposal.recommendedCafesAndCoworks || []).slice(0, 3);
+  proposal.practicalTips = (proposal.practicalTips || []).slice(0, 4);
+  return proposal;
+}
+
+/** Progressive: remaining days 2..N. */
+export function validateRemainingDaysPayload(
+  raw: unknown,
+  expectedFrom: number,
+  expectedTo: number
+): ItineraryDay[] {
+  if (!isRecord(raw) && !Array.isArray(raw)) {
+    throw new Error("El JSON de días restantes debe ser un objeto o array.");
+  }
+
+  let list: unknown[] = [];
+  if (isRecord(raw) && Array.isArray(raw.days)) {
+    list = raw.days;
+  } else if (isRecord(raw) && Array.isArray(raw.itinerary)) {
+    list = raw.itinerary;
+  } else if (Array.isArray(raw)) {
+    list = raw;
+  } else {
+    throw new Error('Falta el array "days".');
+  }
+
+  const needed = expectedTo - expectedFrom + 1;
+  if (needed <= 0) return [];
+
+  const days = list
+    .map((d, i) => normalizeDay(d, expectedFrom + i - 1))
+    .filter((d): d is ItineraryDay => !!d)
+    .filter((d) => d.day >= expectedFrom && d.day <= expectedTo)
+    .sort((a, b) => a.day - b.day);
+
+  // Fill gaps with whatever we got, renumber if model used wrong day numbers
+  if (days.length < needed && list.length >= needed) {
+    const forced: ItineraryDay[] = [];
+    for (let i = 0; i < needed; i++) {
+      const n = normalizeDay(list[i], expectedFrom + i - 1);
+      if (!n) continue;
+      n.day = expectedFrom + i;
+      forced.push(n);
+    }
+    if (forced.length >= 1) return forced;
+  }
+
+  if (days.length < 1) {
+    throw new Error(`Se requieren días ${expectedFrom}..${expectedTo}.`);
+  }
+  return days;
+}
+
+/** Merge shell (day 1) + remaining days into a full Principal. */
+export function mergeShellWithDays(
+  shell: GeneratedItinerary,
+  extraDays: ItineraryDay[],
+  totalDays: number
+): GeneratedItinerary {
+  const day1 = shell.itinerary.find((d) => d.day === 1) || shell.itinerary[0];
+  const rest = extraDays
+    .filter((d) => d.day !== 1)
+    .sort((a, b) => a.day - b.day)
+    .slice(0, Math.max(0, totalDays - 1));
+  const itinerary = day1 ? [day1, ...rest] : rest;
+  return {
+    ...shell,
+    proposalType: "Principal",
+    itinerary,
+  };
+}
+
 const ALLOWED_ICONS = new Set([
   "laptop_mac",
   "local_cafe",

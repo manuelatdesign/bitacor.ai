@@ -40,7 +40,7 @@ const ENRICHMENT_TTL_MS = 30 * 60_000;
 
 export function cacheKey(config: TravelConfigInput): string {
   const payload = {
-    v: "itinerary-progressive-v4",
+    v: "itinerary-day-progressive-v5",
     destination: config.destination?.trim().toLowerCase(),
     days: config.days,
     budget: config.budget,

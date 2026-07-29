@@ -239,12 +239,18 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
     }
 
     const regenerate = body.regenerate === true;
-    const stage: "principal" | "optionB" =
-      body.stage === "optionB" ? "optionB" : "principal";
+    const rawStage = body.stage;
+    const stage: "shell" | "days" | "optionB" =
+      rawStage === "optionB"
+        ? "optionB"
+        : rawStage === "days"
+          ? "days"
+          : "shell"; // principal / shell / default
     const key = cacheKey(config);
+    const totalDays = config.days && config.days > 0 ? config.days : 3;
 
-    // Full-pair cache only on principal stage (instant both proposals)
-    if (stage === "principal" && !regenerate) {
+    // Full-pair cache only on shell stage (instant both proposals)
+    if (stage === "shell" && !regenerate) {
       const cached = getCachedProposals(key);
       if (cached && cached.length >= 2) {
         console.log(`[generate-proposals] cache hit (${Date.now() - started}ms)`);
@@ -254,12 +260,14 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
             cached: true,
             source: "ai",
             stage: "complete",
+            pendingDays: false,
             pendingOptionB: false,
+            expectedDays: totalDays,
             timings: { totalMs: Date.now() - started },
           },
         });
       }
-    } else if (regenerate && stage === "principal") {
+    } else if (regenerate && stage === "shell") {
       console.log("[generate-proposals] regenerate=true — cache bypass");
     }
 
@@ -271,7 +279,7 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
       });
     }
 
-    // Enrichment: reuse in-memory cache when possible (optionB / same config)
+    // Enrichment: reuse in-memory cache when possible (days / optionB / same config)
     let enrichment = !regenerate ? getCachedEnrichment(key) : null;
     if (!enrichment) {
       const tPlaces = Date.now();
@@ -290,7 +298,8 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
     }
 
     const {
-      generatePrincipalWithCursor,
+      generateShellWithCursor,
+      generateRemainingDaysWithCursor,
       generateOptionBWithCursor,
     } = await import("./cursorAgent");
 
@@ -334,7 +343,9 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
           cached: false,
           source: "ai",
           stage: "optionB",
+          pendingDays: false,
           pendingOptionB: false,
+          expectedDays: totalDays,
           regenerated: regenerate,
           timings,
           warnings: [...enrichment.warnings, ...geoWarnings],
@@ -348,9 +359,59 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
       });
     }
 
-    // stage === principal
+    if (stage === "days") {
+      if (!isGeneratedItinerary(body.principal)) {
+        return res.status(400).json({
+          error: "stage=days requiere el shell principal (día 1).",
+        });
+      }
+      const shellIn = body.principal;
+      shellIn.proposalType = "Principal";
+
+      const tCursor = Date.now();
+      const { proposal: fullPrincipal, geoWarnings } =
+        await generateRemainingDaysWithCursor(config, enrichment, shellIn, {
+          regenerate,
+        });
+      timings.cursorMs = Date.now() - tCursor;
+      timings.totalMs = Date.now() - started;
+
+      const { proposals, travelLinks } = finalizeProposals(
+        [fullPrincipal],
+        enrichment,
+        config,
+        geoWarnings
+      );
+
+      console.log(
+        `[generate-proposals] days ok destination=${config.destination} days=${fullPrincipal.itinerary.length} timings=${JSON.stringify(timings)}`
+      );
+
+      return res.json({
+        proposals,
+        meta: {
+          cached: false,
+          source: "ai",
+          stage: "days",
+          pendingDays: false,
+          pendingOptionB: true,
+          expectedDays: totalDays,
+          regenerated: regenerate,
+          timings,
+          warnings: [...enrichment.warnings, ...geoWarnings],
+          placesCount: enrichment.places.length,
+          enrichmentSource: "osm+overpass",
+          travelLinks: {
+            flightsUrl: travelLinks.flightsUrl,
+            hotelsUrl: travelLinks.hotelsUrl,
+          },
+        },
+      });
+    }
+
+    // stage === shell
     const tCursor = Date.now();
-    const { proposal: principal, geoWarnings } = await generatePrincipalWithCursor(
+    const { proposal: shell, geoWarnings } = await generateShellWithCursor(
       config,
       enrichment,
       { regenerate }
@@ -358,15 +419,16 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
     timings.cursorMs = Date.now() - tCursor;
     timings.totalMs = Date.now() - started;
 
+    const pendingDays = totalDays > 1;
     const { proposals, travelLinks } = finalizeProposals(
-      [principal],
+      [shell],
       enrichment,
       config,
       geoWarnings
     );
 
     console.log(
-      `[generate-proposals] principal ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
+      `[generate-proposals] shell ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
     );
 
     return res.json({
@@ -374,8 +436,10 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
       meta: {
         cached: false,
         source: "ai",
-        stage: "principal",
+        stage: "shell",
+        pendingDays,
         pendingOptionB: true,
+        expectedDays: totalDays,
         regenerated: regenerate,
         timings,
         warnings: [...enrichment.warnings, ...geoWarnings],

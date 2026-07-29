@@ -88,6 +88,7 @@ export default function App() {
   const [currentStep, setCurrentStep] = useState<StepId>(1);
   const [customDest, setCustomDest] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [daysLoading, setDaysLoading] = useState<boolean>(false);
   const [optionBLoading, setOptionBLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [proposals, setProposals] = useState<GeneratedItinerary[]>([]);
@@ -121,21 +122,24 @@ export default function App() {
     }
 
     setIsLoading(true);
+    setDaysLoading(false);
     setOptionBLoading(false);
     setError(null);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90_000);
+    const timeout = setTimeout(() => controller.abort(), 180_000);
     const regenerate = opts?.regenerate === true;
+    const expectedDays = config.days > 0 ? config.days : 3;
 
     try {
+      // Phase 1: shell (meta + day 1)
       const res = await fetch(apiUrl("/api/generate-proposals"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...config,
           regenerate,
-          stage: "principal",
+          stage: "shell",
         }),
         signal: controller.signal,
       });
@@ -150,24 +154,67 @@ export default function App() {
 
       const list = Array.isArray(data.proposals) ? data.proposals : [];
       if (list.length < 1) {
-        throw new Error("La API no devolvió la propuesta Principal.");
+        throw new Error("La API no devolvió el shell del Principal.");
       }
 
       const { enrichProposalCategories } = await import("./lib/activityCategories");
-      const principalBatch = enrichProposalCategories(list.slice(0, 2));
-      setProposals(principalBatch);
+      let principal = enrichProposalCategories(list.slice(0, 1))[0];
+      setProposals([principal]);
       setProposalSource(data.meta?.cached ? "ai-cached" : "ai");
       setResultMode("draft");
       setActiveTab("planner");
       setIsLoading(false);
 
-      const pendingOptionB = data.meta?.pendingOptionB === true && principalBatch.length < 2;
-      if (!pendingOptionB) {
+      // Cache hit with both proposals
+      if (data.meta?.stage === "complete" || (list.length >= 2 && !data.meta?.pendingOptionB)) {
+        setProposals(enrichProposalCategories(list.slice(0, 2)));
+        setDaysLoading(false);
         setOptionBLoading(false);
         return;
       }
 
-      // Progressive: show Principal now; fetch Opción B in background
+      // Phase 2: remaining days
+      const pendingDays = data.meta?.pendingDays === true && expectedDays > 1;
+      if (pendingDays) {
+        setDaysLoading(true);
+        try {
+          const resDays = await fetch(apiUrl("/api/generate-proposals"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...config,
+              regenerate,
+              stage: "days",
+              principal,
+            }),
+            signal: controller.signal,
+          });
+          const dataDays = await resDays.json().catch(() => ({}));
+          if (!resDays.ok) {
+            throw new Error(
+              typeof dataDays.error === "string"
+                ? dataDays.error
+                : `HTTP ${resDays.status}`
+            );
+          }
+          const listDays = Array.isArray(dataDays.proposals) ? dataDays.proposals : [];
+          if (listDays[0]) {
+            principal = enrichProposalCategories([listDays[0]])[0];
+            setProposals([principal]);
+          }
+        } catch (daysErr: any) {
+          console.warn("Días restantes fallaron (Día 1 ya visible):", daysErr);
+          setError(
+            `Día 1 listo. El resto de días no llegó (${daysErr?.message || "error"}). Puedes regenerar.`
+          );
+          setDaysLoading(false);
+          return;
+        } finally {
+          setDaysLoading(false);
+        }
+      }
+
+      // Phase 3: Opción B
       setOptionBLoading(true);
       try {
         const resB = await fetch(apiUrl("/api/generate-proposals"), {
@@ -177,7 +224,7 @@ export default function App() {
             ...config,
             regenerate,
             stage: "optionB",
-            principal: principalBatch[0],
+            principal,
           }),
           signal: controller.signal,
         });
@@ -190,8 +237,11 @@ export default function App() {
         const listB = Array.isArray(dataB.proposals) ? dataB.proposals : [];
         if (listB.length >= 2) {
           setProposals(enrichProposalCategories(listB.slice(0, 2)));
-        } else if (listB.length === 1 && listB[0]?.proposalType?.toLowerCase().includes("opción")) {
-          setProposals(enrichProposalCategories([principalBatch[0], listB[0]]));
+        } else if (
+          listB.length === 1 &&
+          listB[0]?.proposalType?.toLowerCase().includes("opción")
+        ) {
+          setProposals(enrichProposalCategories([principal, listB[0]]));
         }
       } catch (optErr: any) {
         console.warn("Opción B falló (Principal ya visible):", optErr);
@@ -295,6 +345,7 @@ export default function App() {
     setResultMode(null);
     setUpdatingSavedId(null);
     setOptionBLoading(false);
+    setDaysLoading(false);
     setError(null);
   };
 
@@ -427,6 +478,8 @@ export default function App() {
               updatingExisting={!!updatingSavedId}
               proposalSource={proposalSource}
               isRegenerating={isLoading}
+              daysLoading={daysLoading}
+              expectedDays={config.days > 0 ? config.days : undefined}
               optionBLoading={optionBLoading}
               onRegenerate={() => generateItinerary({ regenerate: true })}
               resetAll={startNewBitacora}
@@ -447,10 +500,10 @@ export default function App() {
                   <p className="font-display font-extralight text-2xl sm:text-3xl text-[#240046] dark:text-[#e2e8f0] tracking-tight leading-snug">
                     {updatingSavedId
                       ? `Actualizando bitácora para ${config.destination || "tu viaje"}…`
-                      : `Armando tu plan Principal para ${config.destination || "tu viaje"}… ✨`}
+                      : `Armando el Día 1 en ${config.destination || "tu viaje"}… ✨`}
                   </p>
                   <p className="mt-3 text-xs text-[#240046]/55 dark:text-white/45">
-                    Opción B se prepara enseguida en segundo plano
+                    Luego completamos el resto de días y la Opción B
                   </p>
                 </div>
               </div>

@@ -18,10 +18,12 @@ export interface TravelConfigInput {
   regenerate?: boolean;
   /**
    * Progressive generation:
-   * - `principal` (default): enrich + Principal only
-   * - `optionB`: Opción B (requires `principal` in body)
+   * - `shell` (default): meta + Día 1 only
+   * - `days`: remaining days (requires `principal` shell)
+   * - `optionB`: Opción B (requires full `principal`)
+   * - `principal`: alias of `shell` (compat)
    */
-  stage?: "principal" | "optionB";
+  stage?: "shell" | "days" | "optionB" | "principal";
 }
 
 export interface PlaceSpot {

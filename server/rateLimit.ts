@@ -7,7 +7,7 @@ interface Bucket {
 
 const buckets = new Map<string, Bucket>();
 const WINDOW_MS = 60_000;
-const MAX_REQUESTS = 8;
+const MAX_REQUESTS = 20;
 
 export function checkRateLimit(ip: string): { ok: boolean; retryAfterSec?: number } {
   const now = Date.now();

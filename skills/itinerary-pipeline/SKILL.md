@@ -13,10 +13,10 @@ description: Pipeline de generación de itinerarios — Cursor SDK, prompts, Pla
 - Cliente solo si cambia contrato: `src/App.tsx`, `src/types.ts`
 
 ## Invariantes
-- Exactamente 2 propuestas: Principal + Opción B, **distintas entre sí** (progresivo: 2 calls `stage`).
+- Exactamente 2 propuestas: Principal + Opción B, **distintas entre sí** (progresivo: `shell` → `days` → `optionB`).
 - Prefs: destino, días, budget, intereses, pace, fechas, **lodging**.
 - Enrichment: OSM (Nominatim + Overpass race); **sin weather**; Google Nearby off en hot path. Soft-fail.
-- Validate + repair JSON por propuesta + geo-check; geo-repair off por default (tips soft).
+- Validate + repair JSON por etapa + geo-check; geo-repair off por default (tips soft).
 - Token budget gate antes de cada `Agent.prompt` (plan × ratio bajo 1.0).
 - Prompt: clustering por zona + horarios + ancla lodging; cap POIs (`CURSOR_MAX_PLACES_IN_PROMPT`).
 - Tono destinos: **nunca negativo**.
