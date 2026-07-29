@@ -273,6 +273,11 @@ export async function handleGenerateProposals(req: ApiRequest, res: ApiResponse)
     console.log(
       `[generate-proposals] ok destination=${config.destination} places=${enrichment.places.length} timings=${JSON.stringify(timings)}`
     );
+    if (timings.totalMs >= 55_000) {
+      console.warn(
+        `[generate-proposals] slow totalMs=${timings.totalMs} (Vercel Hobby cut ~60000ms) cursorMs=${timings.cursorMs} placesMs=${timings.placesMs}`
+      );
+    }
 
     return res.json({
       proposals,

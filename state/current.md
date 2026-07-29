@@ -1,4 +1,4 @@
-# Estado actual — 2026-07-23
+# Estado actual — 2026-07-29
 
 ## Hecho (MVP usable)
 - [x] Wizard multi-step (destino, fechas, presupuesto, intereses, energía, lodging)
@@ -21,6 +21,7 @@
 - [x] Chips de categoría de actividad (13 ids; reemplaza Wifi/Ocio binario)
 - [x] Token budget Cursor SDK (plan × ratio 0.4; geo-repair off; sin UI de cupo)
 - [x] Mapas embebidos = Google Maps JS (sin Leaflet)
+- [x] Mitigación 504 Vercel: prompt compacto + `CURSOR_MAX_PLACES_IN_PROMPT` default 8 + client abort ~70s + copy timeout
 
 ## Pendiente / nice-to-have
 - [x] Bypass cache en “Otra tanda con IA” (`regenerate: true` en API + botón ResultView)
@@ -31,14 +32,16 @@
 - [ ] Amigos reales: auth + follows + sync de viajes (hoy mock)
 - [x] README actualizado (Cursor SDK, `.env`, stack y scripts reales)
 - [ ] Tests automatizados (no hay suite)
+- [ ] Tras deploy: confirmar en logs Vercel `timings.totalMs` < 60000 en generate-proposals
 
 ## Blockers
 - Ninguno de código. Dependencias externas: `CURSOR_API_KEY` requerida para IA real; Places opcional.
+- Prod Hobby Vercel: techo duro 60s en serverless; si aún hay 504 tras compactar, valorar Pro (`maxDuration` 120) o más recorte.
 
 ## Foco sugerido próxima sesión
-1. Reforzar prompts del pipeline (prefs + A/B distintos + tono + research), o
-2. Pasar `lodging` al pipeline/prompt, o
-3. Feature producto que priorice el usuario (con `plan-first`).
+1. Validar timings en prod tras merge/deploy, o
+2. Feature producto que priorice el usuario (con `plan-first`), o
+3. Auditoría copy “3 itinerarios” residual.
 
 ## Nota
 - Rama canónica: **`main`**. Local: `npm run dev` → `:3000`.

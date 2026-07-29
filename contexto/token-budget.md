@@ -39,7 +39,7 @@ Estado: `.data/token-budget.json` (gitignored), reset por día calendario local.
 | `CURSOR_APP_BUDGET_RATIO` | `0.4` | Fracción para Bitácor |
 | `CURSOR_DAILY_RUN_BUDGET` | `20` | Máx. `Agent.prompt`/día |
 | `CURSOR_DISABLE_GEO_REPAIR` | `true` | Sin re-prompt geo |
-| `CURSOR_MAX_PLACES_IN_PROMPT` | `12` | Cap POIs en prompt |
+| `CURSOR_MAX_PLACES_IN_PROMPT` | `8` | Cap POIs en prompt |
 | `CURSOR_PROPOSALS_CACHE_TTL_MIN` | `180` | Cache propuestas (min) |
 | `CURSOR_CATEGORIES_CACHE_TTL_MIN` | `1440` | Cache categorías (min) |
 
