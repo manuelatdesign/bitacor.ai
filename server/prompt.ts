@@ -34,9 +34,9 @@ export function buildProposalsPrompt(
       ? config.interests.join(", ")
       : "coworking, cafés, cultura local";
 
-  const maxPlacesRaw = Number.parseInt(process.env.CURSOR_MAX_PLACES_IN_PROMPT || "12", 10);
+  const maxPlacesRaw = Number.parseInt(process.env.CURSOR_MAX_PLACES_IN_PROMPT || "8", 10);
   const maxPlaces =
-    Number.isFinite(maxPlacesRaw) && maxPlacesRaw > 0 ? maxPlacesRaw : 12;
+    Number.isFinite(maxPlacesRaw) && maxPlacesRaw > 0 ? maxPlacesRaw : 8;
   const placesList = enrichment?.places || [];
   const placesForPrompt = placesList.slice(0, maxPlaces);
   const placesBlock =
@@ -104,7 +104,7 @@ G4. Día 1 respeta hora de llegada; último día respeta hora de regreso (menos 
 G5. Si hay hospedaje del usuario, úsalo como ancla (empezar/cerrar el día cerca cuando tenga sentido).
 G6. En "title" de actividades usa el nombre del lugar del listado cuando lo uses, para poder mapear coords.
 
-REGLAS JSON:
+REGLAS JSON (compacto — menos prosa, misma calidad A/B):
 1. Devuelve SOLO JSON válido (sin markdown, sin backticks, sin texto extra).
 2. El JSON debe ser un objeto con la forma:
 {
@@ -113,7 +113,7 @@ REGLAS JSON:
       "proposalType": "Principal",
       "destinationTitle": string (solo ciudad/destino corto, sin slogan),
       "shortDescription": string,
-      "practicalTips": string[4-6],
+      "practicalTips": string[3-4],
       "recommendedCafesAndCoworks": [
         { "name": string, "type": "cafe"|"coworking", "rating": string, "notes": string, "mapsUrl": string|opcional, "lat": number|opcional, "lng": number|opcional }
       ],
@@ -122,7 +122,7 @@ REGLAS JSON:
           "day": number,
           "title": string,
           "activities": [
-            { "time": string, "title": string, "desc": string (máx. 120 chars), "category": "${ACTIVITY_CATEGORY_PROMPT_LIST}", "mapsUrl": string|opcional, "tip": string|omitir, "reservation": string|omitir }
+            { "time": string, "title": string, "desc": string (máx. 70 chars), "category": "${ACTIVITY_CATEGORY_PROMPT_LIST}", "mapsUrl": string|opcional, "tip": string|omitir, "reservation": string|omitir }
           ]
         }
       ]
@@ -136,7 +136,7 @@ REGLAS JSON:
 3. Exactamente 2 elementos en "proposals": el primero "Principal", el segundo "Opción B".
 4. itinerary.length debe ser ${days} (un día por entrada, day = 1..${days}).
 5. Cada día: 2–4 actividades coherentes con la energía ${energy}/100.
-6. "desc" = 1 frase corta (máx. 100 caracteres).
+6. "desc" = 1 frase corta (máx. 70 caracteres). Sin relleno ("experiencia única", "ideal para nómadas", "perfecto para…").
 6b. "category" OBLIGATORIO en CADA actividad: string en inglés minúsculas, exactamente UNA de: ${ACTIVITY_CATEGORY_PROMPT_LIST}.
    - NO uses español ("Explorar", "Comida", "Naturaleza"). Solo el id: "explore", "food", "nature", etc.
    - NO uses el mismo "explore" en todas: varía según la actividad real.
@@ -148,12 +148,12 @@ REGLAS JSON:
    - Bus/vuelo/taxi largo → "transit". Check-in hotel/hostel → "stay".
    - Compras → "shopping". Deporte extremo/trek exigente → "adventure".
    - Prohibido omitir category. Prohibido isCoworkingFriendly.
-7. tip y reservation: por defecto NO existen. Por cada día del itinerario: MÁXIMO 2 tips y MÁXIMO 2 reservations (a menudo menos o cero).
-   - tip: OMITIR el campo salvo info crítica (solo efectivo, cola larga, cierre temprano, clave wifi, documento, zona complicada a cierta hora). Prohibido rellenar tip en cada actividad.
-   - reservation: OMITIR el campo salvo reserva OBLIGATORIA (entradas, day-pass, tour con cupo, mesa imprescindible). Prohibido "recomendada reservar" en actividades walk-in. Nunca escribas "sin reserva" / "no hace falta".
-   - Si dudas: OMITIR el campo. No inventes tip ni reservation para "completar" el JSON.
-8. practicalTips (4–6): wifi/conectividad, hospedaje, transporte — tono de tip de amigo. OBLIGATORIO: cada nombre de lugar/hostal/barrio/café debe ir como markdown [Nombre](https://www.google.com/maps/search/?api=1&query=...) — SOLO Google Maps (nunca openstreetmap.org). Incluye al menos 3 tips con enlaces.
-9. shortDescription y títulos de día: 1 frase oral, concreta; Spanglish ligero OK. Sin emojis en el JSON.
+7. tip y reservation: por defecto OMITIR. Máximo 1 tip y 1 reservation por día (a menudo cero).
+   - tip: solo info crítica (efectivo, cola, cierre temprano, wifi clave, documento, zona complicada).
+   - reservation: solo si es OBLIGATORIA (entradas, day-pass, tour con cupo). Nunca "sin reserva" / "recomendada reservar".
+   - Si dudas: OMITIR. No inventes campos para "completar" el JSON.
+8. practicalTips (3–4, una línea cada uno): wifi/conectividad, hospedaje, transporte — tono de tip de amigo. OBLIGATORIO: cada nombre de lugar/hostal/barrio/café como markdown [Nombre](https://www.google.com/maps/search/?api=1&query=...) — SOLO Google Maps. Al menos 2 tips con enlaces.
+9. shortDescription y títulos de día: 1 frase oral corta; Spanglish ligero OK. Sin emojis en el JSON.
 10. mapsUrl de cafés/actividades: SOLO Google Maps (search o place). Reutiliza mapsUrl del listado si ya es google.com/maps.
 ${opts?.regenerate ? `\n11. NUEVA TANDA (id ${Date.now()}): propón barrios, orden del día y actividades DISTINTAS a un plan genérico anterior. Mantén el perfil del usuario pero sorprende con otro ángulo creativo.` : ""}
 

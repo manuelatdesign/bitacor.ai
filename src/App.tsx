@@ -123,7 +123,8 @@ export default function App() {
     setError(null);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
+    // Align with Vercel Hobby maxDuration (60s) + small buffer; avoid waiting 2 min after gateway cut.
+    const timeout = setTimeout(() => controller.abort(), 70_000);
 
     try {
       const res = await fetch(apiUrl("/api/generate-proposals"), {
@@ -136,6 +137,9 @@ export default function App() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        if (res.status === 504 || res.status === 408) {
+          throw new Error("GATEWAY_TIMEOUT");
+        }
         throw new Error(
           typeof data.error === "string" ? data.error : `HTTP ${res.status}`
         );
@@ -152,10 +156,14 @@ export default function App() {
       setActiveTab("planner");
     } catch (err: any) {
       console.warn("generate-proposals falló:", err);
-      const msg =
-        err?.name === "AbortError"
-          ? "La IA tardó demasiado (más de 2 min). Intenta de nuevo — a veces el primer intento tarda."
-          : err?.message || "Error al generar";
+      const raw = String(err?.message || "");
+      const isTimeout =
+        err?.name === "AbortError" ||
+        raw === "GATEWAY_TIMEOUT" ||
+        /HTTP 504|timeout|Gateway Time-out/i.test(raw);
+      const msg = isTimeout
+        ? "La IA tardó demasiado. Prueba de nuevo; a veces el segundo intento es más rápido."
+        : raw || "Error al generar";
 
       if (import.meta.env.DEV) {
         console.warn("DEV: usando mock de respaldo");

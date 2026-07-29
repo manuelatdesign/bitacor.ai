@@ -19,6 +19,7 @@
 - **2 propuestas, no 3:** UI/copy antiguos pueden decir “3”; corregir al tocar.
 - **Token budget:** sin `CURSOR_PLAN_DAILY_TOKEN_LIMIT` no bloquea (solo log). Con límite: 429 `TOKEN_BUDGET_EXCEEDED`. Contador en `.data/token-budget.json`. Ver `contexto/token-budget.md`.
 - **Geo-repair:** off por default (`CURSOR_DISABLE_GEO_REPAIR=true`); tips soft si hay saltos.
+- **Vercel 504 en generate-proposals:** Hobby `maxDuration` = 60s. Si la IA supera eso → gateway 504. Cliente aborta a ~70s y muestra mensaje de “tardó demasiado” (no solo `HTTP 504`). Acelerar: `CURSOR_MAX_PLACES_IN_PROMPT` default 8 + prompt compacto. Tras deploy, en logs Vercel buscar `[generate-proposals] ok … timings=` y confirmar `totalMs` < 60000.
 - **Cache in-memory:** reinicio de server limpia cache de propuestas; el budget sí persiste en `.data/`. TTL configurable por env.
 - **Enrichment POIs:** Nominatim + Overpass (gratis). Respeta rate limits / User-Agent. Si Overpass timeout → itinerario sin coords (geo-check se salta).
 - **Categorías por destino:** híbrido catálogo/IA; regenerar fuerza IA.
